@@ -83,6 +83,42 @@ set(
         src/main/c/share/json.cpp
 )
 
+# Check for USDT probe support (sys/sdt.h)
+include(CheckIncludeFile)
+include(CheckSymbolExists)
+
+# Check for sys/sdt.h header
+check_include_file("sys/sdt.h" HAVE_SDT_H)
+
+# Check for gettid syscall availability
+check_symbol_exists(__NR_gettid "sys/syscall.h" HAVE_GETTID_SYSCALL)
+
+if(HAVE_SDT_H)
+    add_compile_definitions(HAVE_SDT_H)
+    message(STATUS "USDT probe support enabled (sys/sdt.h found)")
+
+    # Check if we can find systemtap-sdt-dev package info
+    find_program(PKG_CONFIG_EXECUTABLE pkg-config)
+    if(PKG_CONFIG_EXECUTABLE)
+        execute_process(COMMAND ${PKG_CONFIG_EXECUTABLE} --exists systemtap-sdt
+                       RESULT_VARIABLE PKG_CONFIG_RESULT)
+        if(PKG_CONFIG_RESULT EQUAL 0)
+            message(STATUS "systemtap-sdt development package found")
+        else()
+            message(WARNING "sys/sdt.h found but systemtap-sdt package may not be installed")
+        endif()
+    endif()
+else()
+    message(STATUS "USDT probe support disabled (sys/sdt.h not found)")
+    message(STATUS "Install systemtap-sdt-dev (Ubuntu/Debian) or systemtap-sdt-devel (RHEL/CentOS) for USDT support")
+endif()
+
+if(HAVE_GETTID_SYSCALL)
+    message(STATUS "gettid syscall available")
+else()
+    message(STATUS "gettid syscall not available, will use getpid() fallback")
+endif()
+
 # JNI includes
 include_directories($ENV{JAVA_HOME}/include/)
 
@@ -98,6 +134,7 @@ if (OS_DARWIN)
             src/main/c/osx/affinity.c
             src/main/c/osx/accept.c
             src/main/c/freebsd/files.c
+            src/main/c/osx/qdbprobes.c
     )
 elseif (OS_FREEBSD)
     MESSAGE("Building for FreeBSD")
@@ -109,6 +146,7 @@ elseif (OS_FREEBSD)
             src/main/c/freebsd/affinity.c
             src/main/c/freebsd/accept.c
             src/main/c/freebsd/files.c
+            src/main/c/freebsd/qdbprobes.c
     )
 elseif (OS_LINUX)
     MESSAGE("Building for GNU/Linux")
@@ -123,6 +161,7 @@ elseif (OS_LINUX)
             src/main/c/linux/files.c
             src/main/c/linux/io_uring.c
             src/main/c/linux/inotify.c
+            src/main/c/linux/qdbprobes.c
     )
 endif ()
 
@@ -142,6 +181,7 @@ if (OS_WINDOWS)
             src/main/c/windows/accept.c
             src/main/c/windows/filewatch.c
             src/main/c/share/fs.h
+            src/main/c/windows/qdbprobes.c
     )
 else ()
     set(
@@ -189,6 +229,49 @@ if (JIT_TEST)
     target_link_libraries(jittests questdb)
 endif ()
 
+# USDT probe validation test
+if (NOT DEFINED USDT_TEST)
+    set(USDT_TEST FALSE)
+endif ()
+
+if (USDT_TEST)
+    # Select the appropriate probe implementation based on platform
+    if (OS_LINUX)
+        set(PROBE_SOURCE src/main/c/linux/qdbprobes.c)
+        set(PROBE_INCLUDE_DIR src/main/c/linux)
+    elseif (OS_DARWIN)
+        set(PROBE_SOURCE src/main/c/osx/qdbprobes.c)
+        set(PROBE_INCLUDE_DIR src/main/c/osx)
+    elseif (OS_FREEBSD)
+        set(PROBE_SOURCE src/main/c/freebsd/qdbprobes.c)
+        set(PROBE_INCLUDE_DIR src/main/c/freebsd)
+    elseif (OS_WINDOWS)
+        set(PROBE_SOURCE src/main/c/windows/qdbprobes.c)
+        set(PROBE_INCLUDE_DIR src/main/c/windows)
+    else()
+        message(FATAL_ERROR "Unsupported platform for USDT test")
+    endif()
+
+    add_executable(usdt_test src/test/c/qdbprobes_test.c ${PROBE_SOURCE})
+
+    # Use C-specific compile options for the test
+    target_compile_options(usdt_test PRIVATE
+        "$<$<CONFIG:DEBUG>:${C_DEBUG_OPTIONS}>"
+        "$<$<CONFIG:RELEASE>:${C_RELEASE_OPTIONS}>")
+
+    if(HAVE_SDT_H AND OS_LINUX)
+        target_compile_definitions(usdt_test PRIVATE HAVE_SDT_H)
+    endif()
+
+    # Add include directories
+    target_include_directories(usdt_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/${PROBE_INCLUDE_DIR}
+        ${CMAKE_CURRENT_BINARY_DIR}
+        ${CMAKE_SOURCE_DIR})
+
+    message(STATUS "USDT validation test enabled - build with 'make usdt_test'")
+endif ()
+
 #liburing
 
 if (OS_LINUX)
@@ -214,13 +297,30 @@ endif ()
 
 add_library(questdb SHARED ${SOURCE_FILES} ${ASMJIT_SRC})
 
-set(COMMON_OPTIONS "-Wno-gnu-anonymous-struct;-Wno-nested-anon-types;-Wno-unused-parameter;-fPIC;-fno-rtti;-fno-exceptions")
+# Set separate compile options for C and C++ files
+target_compile_options(questdb PRIVATE
+    $<$<COMPILE_LANGUAGE:CXX>:${CXX_OPTIONS}>
+    $<$<COMPILE_LANGUAGE:C>:${C_OPTIONS}>)
+
+# Common options for both C and C++
+set(COMMON_OPTIONS "-Wno-gnu-anonymous-struct;-Wno-nested-anon-types;-Wno-unused-parameter;-fPIC")
+
+# C++-specific options
+set(CXX_OPTIONS "${COMMON_OPTIONS};-fno-rtti;-fno-exceptions")
+
+# C-specific options (no C++-specific flags)
+set(C_OPTIONS "${COMMON_OPTIONS}")
 
 set(DEBUG_OPTIONS "-Wall;-pedantic;-Wextra;-g;-O0")
 set(RELEASE_OPTIONS "-O3")
 
-list(APPEND DEBUG_OPTIONS "${ASMJIT_CFLAGS};${COMMON_OPTIONS}")
-list(APPEND RELEASE_OPTIONS "${ASMJIT_CFLAGS};${COMMON_OPTIONS}")
+# Separate C and C++ compiler options
+set(CXX_DEBUG_OPTIONS "${DEBUG_OPTIONS};${ASMJIT_CFLAGS};${CXX_OPTIONS}")
+set(CXX_RELEASE_OPTIONS "${RELEASE_OPTIONS};${ASMJIT_CFLAGS};${CXX_OPTIONS}")
+set(C_DEBUG_OPTIONS "${DEBUG_OPTIONS};${C_OPTIONS}")
+set(C_RELEASE_OPTIONS "${RELEASE_OPTIONS};${C_OPTIONS}")
+
+# C and C++ options are now applied automatically based on file language
 
 #zlib
 
@@ -259,8 +359,8 @@ if (ARCH_AARCH64)
     )
 
     target_compile_options(questdb PRIVATE
-            "$<$<CONFIG:DEBUG>:${DEBUG_OPTIONS}>"
-            "$<$<CONFIG:RELEASE>:${RELEASE_OPTIONS}>")
+            "$<$<CONFIG:DEBUG>:${CXX_DEBUG_OPTIONS}>"
+            "$<$<CONFIG:RELEASE>:${CXX_RELEASE_OPTIONS}>")
 
 else ()
 
@@ -315,8 +415,8 @@ else ()
                 "$<$<CONFIG:RELEASE>:${RELEASE_OPTIONS}>")
     endif (WIN32)
     target_compile_options(questdb PRIVATE "-m64"
-            "$<$<CONFIG:DEBUG>:${DEBUG_OPTIONS}>"
-            "$<$<CONFIG:RELEASE>:${RELEASE_OPTIONS}>")
+            "$<$<CONFIG:DEBUG>:${CXX_DEBUG_OPTIONS}>"
+            "$<$<CONFIG:RELEASE>:${CXX_RELEASE_OPTIONS}>")
 
     ## Uncomment to measure time of ooo.cpp methods
     ## add_compile_definitions(OOO_CPP_PROFILE_TIMING)

@@ -24,6 +24,7 @@
 
 package io.questdb.griffin.engine;
 
+import io.questdb.QueryProbes;
 import io.questdb.cairo.AbstractRecordCursorFactory;
 import io.questdb.cairo.CairoConfiguration;
 import io.questdb.cairo.CairoEngine;
@@ -271,6 +272,10 @@ public class QueryProgress extends AbstractRecordCursorFactory implements Resour
             CharSequence sqlText = queryTrace.queryText;
             sqlId = registry.register(sqlText, executionContext);
             beginNanos = executionContext.getCairoEngine().getConfiguration().getNanosecondClock().getTicks();
+
+            // Emit USDT probe for query start
+            QueryProbes.start(sqlId, QueryProbes.hashSql(sqlText));
+
             logStart(sqlId, sqlText, executionContext, jit);
             try {
                 // Configure this factory to be the supervisor for all open table readers.
@@ -486,6 +491,10 @@ public class QueryProgress extends AbstractRecordCursorFactory implements Resour
                 if (executionContext != null) {
                     try {
                         String sqlText = queryTrace.queryText;
+
+                        // Emit USDT probe for query end
+                        QueryProbes.end(sqlId);
+
                         if (th == null) {
                             logEnd(sqlId, sqlText, executionContext, beginNanos, readers, queryTrace);
                         } else {

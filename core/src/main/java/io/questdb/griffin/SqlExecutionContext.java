@@ -138,6 +138,8 @@ public interface SqlExecutionContext extends Sinkable, Closeable {
 
     QueryFutureUpdateListener getQueryFutureUpdateListener();
 
+    long getQueryId();
+
     Rnd getRandom();
 
     default TableReader getReader(TableToken tableName, long version) {
@@ -252,6 +254,8 @@ public interface SqlExecutionContext extends Sinkable, Closeable {
 
     void setParallelTopKEnabled(boolean parallelTopKEnabled);
 
+    void setQueryId(long queryId);
+
     void setRandom(Rnd rnd);
 
     void setUseSimpleCircuitBreaker(boolean value);
@@ -265,4 +269,6 @@ public interface SqlExecutionContext extends Sinkable, Closeable {
 
     default void toSink(@NotNull CharSink<?> sink) {
     }
+
+
 }

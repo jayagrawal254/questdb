@@ -34,6 +34,7 @@ import io.questdb.std.Chars;
 import io.questdb.std.ConcurrentLongHashMap;
 import io.questdb.std.LongList;
 import io.questdb.std.Mutable;
+import io.questdb.std.Numbers;
 import io.questdb.std.ThreadLocal;
 import io.questdb.std.WeakMutableObjectPool;
 import io.questdb.std.datetime.Clock;
@@ -161,6 +162,7 @@ public class QueryRegistry {
         }
 
         executionContext.setCancelledFlag(e.cancelled);
+        executionContext.setQueryId(queryId);
         return queryId;
     }
 
@@ -184,6 +186,7 @@ public class QueryRegistry {
         // Remove shared AtomicBoolean from execution context CircuitBreaker
         // before returning Entry to the pool
         executionContext.setCancelledFlag(null);
+        executionContext.setQueryId(Numbers.LONG_NULL);
         final Entry e = registry.remove(queryId);
         if (e != null) {
             tlQueryPool.get().push(e);

@@ -42,6 +42,7 @@ import io.questdb.griffin.engine.window.WindowContext;
 import io.questdb.griffin.engine.window.WindowContextImpl;
 import io.questdb.griffin.model.IntervalUtils;
 import io.questdb.std.IntStack;
+import io.questdb.std.Numbers;
 import io.questdb.std.Rnd;
 import io.questdb.std.Transient;
 import io.questdb.std.datetime.MicrosecondClock;
@@ -84,6 +85,7 @@ public class SqlExecutionContextImpl implements SqlExecutionContext {
     private boolean parallelGroupByEnabled;
     private boolean parallelReadParquetEnabled;
     private boolean parallelTopKEnabled;
+    private long queryId;
     private Rnd random;
     private long requestFd = -1;
     private boolean useSimpleCircuitBreaker;
@@ -110,6 +112,7 @@ public class SqlExecutionContextImpl implements SqlExecutionContext {
         this.containsSecret = false;
         this.useSimpleCircuitBreaker = false;
         this.simpleCircuitBreaker = new AtomicBooleanCircuitBreaker(cairoConfiguration.getCircuitBreakerConfiguration().getCircuitBreakerThrottle());
+        this.queryId = Numbers.LONG_NULL;
     }
 
     @Override
@@ -243,6 +246,11 @@ public class SqlExecutionContextImpl implements SqlExecutionContext {
     @Override
     public QueryFutureUpdateListener getQueryFutureUpdateListener() {
         return QueryFutureUpdateListener.EMPTY;
+    }
+
+    @Override
+    public long getQueryId() {
+        return queryId;
     }
 
     @Override
@@ -413,6 +421,11 @@ public class SqlExecutionContextImpl implements SqlExecutionContext {
     @Override
     public void setParallelTopKEnabled(boolean parallelTopKEnabled) {
         this.parallelTopKEnabled = parallelTopKEnabled;
+    }
+
+    @Override
+    public void setQueryId(long queryId) {
+        this.queryId = queryId;
     }
 
     @Override

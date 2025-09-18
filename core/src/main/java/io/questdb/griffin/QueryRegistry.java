@@ -34,9 +34,10 @@ import io.questdb.std.Chars;
 import io.questdb.std.ConcurrentLongHashMap;
 import io.questdb.std.LongList;
 import io.questdb.std.Mutable;
+import io.questdb.std.Numbers;
 import io.questdb.std.ThreadLocal;
 import io.questdb.std.WeakMutableObjectPool;
-import io.questdb.std.datetime.microtime.MicrosecondClock;
+import io.questdb.std.datetime.Clock;
 import io.questdb.std.str.StringSink;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.TestOnly;
@@ -50,7 +51,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class QueryRegistry {
 
     private static final Log LOG = LogFactory.getLog(QueryRegistry.class);
-    private final MicrosecondClock clock;
+    private final Clock clock;
     private final AtomicLong idSeq = new AtomicLong();
     private final ConcurrentLongHashMap<Entry> registry = new ConcurrentLongHashMap<>();
     private final ThreadLocal<WeakMutableObjectPool<Entry>> tlQueryPool;
@@ -124,7 +125,7 @@ public class QueryRegistry {
      *
      * @param query            - query text
      * @param executionContext - execution context
-     * @return non-negative id assigned to given query. Id may be used to look query up in registry.
+     * @return non-negative id assigned to given query. It may be used to look query up in registry.
      */
     public long register(CharSequence query, SqlExecutionContext executionContext) {
         final long queryId = idSeq.getAndIncrement();
@@ -161,6 +162,7 @@ public class QueryRegistry {
         }
 
         executionContext.setCancelledFlag(e.cancelled);
+        executionContext.setQueryId(queryId);
         return queryId;
     }
 
@@ -184,6 +186,7 @@ public class QueryRegistry {
         // Remove shared AtomicBoolean from execution context CircuitBreaker
         // before returning Entry to the pool
         executionContext.setCancelledFlag(null);
+        executionContext.setQueryId(Numbers.LONG_NULL);
         final Entry e = registry.remove(queryId);
         if (e != null) {
             tlQueryPool.get().push(e);

@@ -48,6 +48,7 @@ import io.questdb.std.Unsafe;
 import io.questdb.std.Vect;
 import io.questdb.std.datetime.millitime.MillisecondClock;
 import io.questdb.std.str.Path;
+import io.questdb.std.str.StringSink;
 import io.questdb.std.str.Utf16Sink;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -99,6 +100,7 @@ public class TableReader implements Closeable, SymbolTableSource {
     private long txTruncateVersion;
     private long txn = TableUtils.INITIAL_TXN;
     private boolean txnAcquired = false;
+    private StringSink closeReasonSink = new StringSink();
 
     public TableReader(
             int id,
@@ -502,7 +504,7 @@ public class TableReader implements Closeable, SymbolTableSource {
                     final int offset = partitionIndex * PARTITIONS_SLOT_SIZE;
                     long partitionSize = openPartitionInfo.getQuick(offset + PARTITIONS_SLOT_OFFSET_SIZE);
                     if (partitionSize > -1) {
-                        closePartition(partitionIndex);
+                        closePartition(partitionIndex, "txn downgrade");
                     }
                 }
             }
@@ -554,7 +556,7 @@ public class TableReader implements Closeable, SymbolTableSource {
                 final int offset = partitionIndex * PARTITIONS_SLOT_SIZE;
                 long partitionSize = openPartitionInfo.getQuick(offset + PARTITIONS_SLOT_OFFSET_SIZE);
                 if (partitionSize > -1 && ++openCount > maxOpenPartitions) {
-                    closePartition(partitionIndex);
+                    closePartition(partitionIndex, "max open partitions");
                     if (openCount == originallyOpen) {
                         // ok, we've closed enough
                         break;
@@ -765,12 +767,15 @@ public class TableReader implements Closeable, SymbolTableSource {
         }
     }
 
-    private void closePartition(int partitionIndex) {
+    private void closePartition(int partitionIndex, CharSequence reason) {
         final int offset = partitionIndex * PARTITIONS_SLOT_SIZE;
         long partitionTimestamp = openPartitionInfo.getQuick(offset);
         long partitionSize = openPartitionInfo.getQuick(offset + PARTITIONS_SLOT_OFFSET_SIZE);
         closePartitionResources(partitionIndex, offset);
-        LOG.info().$("closed partition [path=").$substr(dbRootSize, path).$(", timestamp=").$ts(partitionTimestamp).I$();
+        LOG.info().$("closed partition [path=").$substr(dbRootSize, path)
+                .$(", timestamp=").$ts(partitionTimestamp)
+                .$(", reason=").$(reason)
+                .I$();
         if (partitionSize > -1) {
             openPartitionCount--;
         }
@@ -1255,8 +1260,8 @@ public class TableReader implements Closeable, SymbolTableSource {
         return path;
     }
 
-    private void prepareForLazyOpen(int partitionIndex) {
-        closePartition(partitionIndex);
+    private void prepareForLazyOpen(int partitionIndex, CharSequence reason) {
+        closePartition(partitionIndex, reason);
     }
 
     private void readTxnSlow(long deadline) {
@@ -1319,7 +1324,7 @@ public class TableReader implements Closeable, SymbolTableSource {
                                     openPartitionInfo.setQuick(offset + PARTITIONS_SLOT_OFFSET_SIZE, txPartitionSize);
                                     LOG.debug().$("updated partition size [partition=").$(openPartitionInfo.getQuick(offset)).I$();
                                 } else {
-                                    prepareForLazyOpen(partitionIndex);
+                                    prepareForLazyOpen(partitionIndex, "fast recon: unsuccessful reloading of partition columns");
                                 }
                             } else {
                                 // reload Parquet file
@@ -1328,11 +1333,13 @@ public class TableReader implements Closeable, SymbolTableSource {
                                     openPartitionInfo.setQuick(offset + PARTITIONS_SLOT_OFFSET_SIZE, txPartitionSize);
                                     LOG.debug().$("updated parquet partition size [partition=").$(openPartitionInfo.getQuick(offset)).I$();
                                 } else {
-                                    prepareForLazyOpen(partitionIndex);
+                                    prepareForLazyOpen(partitionIndex, "fast recon: unsuccessful reloading of parquet partition");
                                 }
                             }
                         } else {
-                            prepareForLazyOpen(partitionIndex);
+                            closeReasonSink.clear();
+                            closeReasonSink.put("fast recon: partition name txn changed openPartitionNameTxn = ").put(openPartitionNameTxn).put(", txPartitionNameTxn = ").put(txPartitionNameTxn);
+                            prepareForLazyOpen(partitionIndex, closeReasonSink);
                         }
                     }
                     partitionIndex++;
@@ -1376,7 +1383,8 @@ public class TableReader implements Closeable, SymbolTableSource {
                 final long openPartitionColumnVersion = openPartitionInfo.getQuick(offset + PARTITIONS_SLOT_OFFSET_COLUMN_VERSION);
 
                 if (!forceTruncate) {
-                    if (openPartitionNameTxn == txPartitionNameTxn && openPartitionColumnVersion == columnVersionReader.getMaxPartitionVersion(txPartTs)) {
+                    long maxPartitionColumnVersion = columnVersionReader.getMaxPartitionVersion(txPartTs);
+                    if (openPartitionNameTxn == txPartitionNameTxn && openPartitionColumnVersion == maxPartitionColumnVersion) {
                         // We used to skip reloading partition size if the row count is the same and name txn is the same.
                         // But in case of dedup, the row count can be same, but the data can be overwritten by splitting and squashing the partition back
                         // This is ok for fixed size columns but var length columns have to be re-mapped to the bigger / smaller sizes
@@ -1388,7 +1396,7 @@ public class TableReader implements Closeable, SymbolTableSource {
                                     openPartitionInfo.setQuick(offset + PARTITIONS_SLOT_OFFSET_SIZE, txPartitionSize);
                                     LOG.debug().$("updated partition size [partition=").$(openPartitionTimestamp).I$();
                                 } else {
-                                    prepareForLazyOpen(partitionIndex);
+                                    prepareForLazyOpen(partitionIndex, "slow recon: unsuccessful reloading of partition columns");
                                 }
                             } else {
                                 // reload Parquet file
@@ -1397,16 +1405,21 @@ public class TableReader implements Closeable, SymbolTableSource {
                                     openPartitionInfo.setQuick(offset + PARTITIONS_SLOT_OFFSET_SIZE, txPartitionSize);
                                     LOG.debug().$("updated parquet partition size [partition=").$(openPartitionInfo.getQuick(offset)).I$();
                                 } else {
-                                    prepareForLazyOpen(partitionIndex);
+                                    prepareForLazyOpen(partitionIndex, "slow recon: unsuccessful reloading of parquet partition");
                                 }
                             }
                         }
                     } else {
-                        prepareForLazyOpen(partitionIndex);
+                        closeReasonSink.clear();
+                        closeReasonSink.put("slow recon: partition name txn changed openPartitionNameTxn = ").put(openPartitionNameTxn)
+                                .put(", txPartitionNameTxn = ").put(txPartitionNameTxn)
+                                .put(", openPartitionColumnVersion = ").put(openPartitionColumnVersion)
+                                .put(", txPartitionColumnVersion = ").put(maxPartitionColumnVersion);
+                        prepareForLazyOpen(partitionIndex, closeReasonSink);
                     }
                     changed = true;
                 } else if (openPartitionSize > -1 && txPartitionSize > -1) { // Don't force re-open if not yet opened
-                    prepareForLazyOpen(partitionIndex);
+                    prepareForLazyOpen(partitionIndex, "slow recon: force truncate");
                 }
                 txPartitionIndex++;
                 partitionIndex++;

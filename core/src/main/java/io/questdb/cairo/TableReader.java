@@ -100,7 +100,7 @@ public class TableReader implements Closeable, SymbolTableSource {
     private long txTruncateVersion;
     private long txn = TableUtils.INITIAL_TXN;
     private boolean txnAcquired = false;
-    private StringSink closeReasonSink = new StringSink();
+    private final StringSink closeReasonSink = new StringSink();
 
     public TableReader(
             int id,
@@ -774,6 +774,8 @@ public class TableReader implements Closeable, SymbolTableSource {
         closePartitionResources(partitionIndex, offset);
         LOG.info().$("closed partition [path=").$substr(dbRootSize, path)
                 .$(", timestamp=").$ts(partitionTimestamp)
+                .$(", size=").$(partitionSize)
+                .$(", identity=").$hex(hashCode())
                 .$(", reason=").$(reason)
                 .I$();
         if (partitionSize > -1) {

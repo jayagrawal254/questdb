@@ -69,6 +69,22 @@ public interface MemoryM extends Closeable {
         return 0;
     }
 
+    enum ProvenanceToken {
+        TW_CHANGE_COLUMN_TYPE,
+        TW_CHANGE_SYMBOL_CAPACITY,
+        TW_ADD_COLUMN,
+        TW_VALIDATE_SWAP_META,
+        TW_CONVERT_PARTITION_NATIVE_TO_PARQUET,
+        TW_CONVERT_PARTITION_PARQUET_TO_NATIVE,
+        TW_DROP_PARTITION_BY_EXACT_TIMESTAMP,
+        TW_FINISH_O3_COMMIT,
+        TW_OPEN_LAST_PARTITION_AND_SET_APPEND_POSITION, TW_PROCESS_WAL_COMMIT, TW_SWITCH_PARTITION, TW_ROW_CANCEL,
+    }
+
+    default void trackProvenance(ProvenanceToken prov) {
+
+    }
+
     /**
      * Maps file to memory
      *

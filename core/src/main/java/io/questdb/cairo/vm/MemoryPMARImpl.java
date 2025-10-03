@@ -31,17 +31,23 @@ import io.questdb.cairo.TableUtils;
 import io.questdb.cairo.vm.api.MemoryMAR;
 import io.questdb.log.Log;
 import io.questdb.log.LogFactory;
+import io.questdb.std.ConcurrentLongHashMap;
 import io.questdb.std.FilesFacade;
 import io.questdb.std.str.LPSZ;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 
+import java.util.concurrent.atomic.AtomicLong;
+
 // paged mapped appendable readable
 public class MemoryPMARImpl extends MemoryPARWImpl implements MemoryMAR {
     private static final Log LOG = LogFactory.getLog(MemoryPMARImpl.class);
+    private static final AtomicLong idGenerator = new AtomicLong(1000);
+    private static final ConcurrentLongHashMap<ProvenanceToken> provenances = new ConcurrentLongHashMap<>(8192);
     private final CairoConfiguration configuration;
     private long fd = -1;
     private FilesFacade ff;
+    private long id;
     private int madviseOpts = -1;
     private int mappedPage;
     private long pageAddress = 0;
@@ -56,7 +62,15 @@ public class MemoryPMARImpl extends MemoryPARWImpl implements MemoryMAR {
         this.configuration = configuration;
     }
 
+    public static String traceSrc(long memId) {
+        final var trace = provenances.get(memId);
+        if (trace == null)
+            return "no trace";
+        return trace.name();
+    }
+
     public final void close(boolean truncate, byte truncateMode) {
+        //LOG.info().$("close [fd=").$(fd).$(", id=").$(id).$(']').$();
         long sz = truncate ? getAppendOffset() : -1L;
         releaseCurrentPage();
         super.close();
@@ -89,6 +103,10 @@ public class MemoryPMARImpl extends MemoryPARWImpl implements MemoryMAR {
     @Override
     public FilesFacade getFilesFacade() {
         return ff;
+    }
+
+    public long getId() {
+        return id;
     }
 
     @Override
@@ -126,7 +144,8 @@ public class MemoryPMARImpl extends MemoryPARWImpl implements MemoryMAR {
         mappedPage = -1;
         setExtendSegmentSize(extendSegmentSize);
         fd = TableUtils.openFileRWOrFail(ff, name, opts);
-        LOG.debug().$("open ").$(name).$(" [fd=").$(fd).$(", extendSegmentSize=").$(extendSegmentSize).$(']').$();
+        bumpId();
+        //LOG.info().$("open ").$(name).$(" [fd=").$(fd).$(", id=").$(id).$(", extendSegmentSize=").$(extendSegmentSize).$(']').$();
     }
 
     @Override
@@ -135,6 +154,7 @@ public class MemoryPMARImpl extends MemoryPARWImpl implements MemoryMAR {
         setExtendSegmentSize(extendSegmentSize);
         close(truncate, truncateMode);
         this.fd = fd;
+        bumpId();
         jumpTo(offset);
     }
 
@@ -156,6 +176,15 @@ public class MemoryPMARImpl extends MemoryPARWImpl implements MemoryMAR {
         }
         updateLimits(0, pageAddress = mapPage(0));
         LOG.debug().$("truncated [fd=").$(fd).$(']').$();
+    }
+
+    @Override
+    public void trackProvenance(ProvenanceToken prov) {
+        provenances.put(id, prov);
+    }
+
+    private void bumpId() {
+        id = idGenerator.incrementAndGet();
     }
 
     @Override

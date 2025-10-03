@@ -40,6 +40,7 @@ import io.questdb.cairo.sql.SymbolTable;
 import io.questdb.cairo.sql.TableMetadata;
 import io.questdb.cairo.sql.TableRecordMetadata;
 import io.questdb.cairo.sql.TableReferenceOutOfDateException;
+import io.questdb.cairo.vm.MemoryPMARImpl;
 import io.questdb.cairo.vm.NullMapWriter;
 import io.questdb.cairo.vm.Vm;
 import io.questdb.cairo.vm.api.MemoryA;
@@ -47,6 +48,7 @@ import io.questdb.cairo.vm.api.MemoryARW;
 import io.questdb.cairo.vm.api.MemoryCARW;
 import io.questdb.cairo.vm.api.MemoryCMR;
 import io.questdb.cairo.vm.api.MemoryCR;
+import io.questdb.cairo.vm.api.MemoryM;
 import io.questdb.cairo.vm.api.MemoryMA;
 import io.questdb.cairo.vm.api.MemoryMAR;
 import io.questdb.cairo.vm.api.MemoryMARW;
@@ -676,7 +678,7 @@ public class TableWriter implements TableWriterAPI, MetadataService, Closeable {
         // create column files
         if (txWriter.getTransientRowCount() > 0 || !PartitionBy.isPartitioned(partitionBy)) {
             try {
-                openNewColumnFiles(columnName, columnType, isIndexed, indexValueBlockCapacity);
+                openNewColumnFiles(columnName, columnType, isIndexed, indexValueBlockCapacity, MemoryM.ProvenanceToken.TW_ADD_COLUMN);
             } catch (CairoException e) {
                 runFragile(RECOVER_FROM_COLUMN_OPEN_FAILURE, e);
             }
@@ -1071,7 +1073,7 @@ public class TableWriter implements TableWriterAPI, MetadataService, Closeable {
             if (txWriter.getTransientRowCount() > 0 || !PartitionBy.isPartitioned(partitionBy)) {
                 long partitionTimestamp = txWriter.getLastPartitionTimestamp();
                 setStateForTimestamp(path, partitionTimestamp);
-                openColumnFiles(columnName, columnNameTxn, columnIndex, path.size());
+                openColumnFiles(columnName, columnNameTxn, columnIndex, path.size(), MemoryM.ProvenanceToken.TW_CHANGE_COLUMN_TYPE);
                 setColumnAppendPosition(columnIndex, txWriter.getTransientRowCount(), false);
                 path.trimTo(pathSize);
             }
@@ -1205,7 +1207,7 @@ public class TableWriter implements TableWriterAPI, MetadataService, Closeable {
                     // column name txn for partition columns would not change
                     // we updated only symbol table version
                     columnNameTxn = columnVersionWriter.getColumnNameTxn(partitionTimestamp, columnIndex);
-                    openColumnFiles(columnName, columnNameTxn, columnIndex, path.size());
+                    openColumnFiles(columnName, columnNameTxn, columnIndex, path.size(), MemoryM.ProvenanceToken.TW_CHANGE_SYMBOL_CAPACITY);
                     setColumnAppendPosition(columnIndex, transientRowCount, false);
                     path.trimTo(pathSize);
 
@@ -1586,7 +1588,7 @@ public class TableWriter implements TableWriterAPI, MetadataService, Closeable {
 
         if (lastPartitionConverted) {
             // Open last partition as read-only
-            openPartition(partitionTimestamp, txWriter.getTransientRowCount());
+            openPartition(partitionTimestamp, txWriter.getTransientRowCount(), MemoryM.ProvenanceToken.TW_CONVERT_PARTITION_NATIVE_TO_PARQUET);
             setAppendPosition(txWriter.getTransientRowCount(), false);
         }
         return true;
@@ -1766,7 +1768,7 @@ public class TableWriter implements TableWriterAPI, MetadataService, Closeable {
 
         if (lastPartitionConverted) {
             // Open last partition as read-only
-            openPartition(partitionTimestamp, txWriter.getTransientRowCount());
+            openPartition(partitionTimestamp, txWriter.getTransientRowCount(), MemoryM.ProvenanceToken.TW_CONVERT_PARTITION_PARQUET_TO_NATIVE);
             setAppendPosition(txWriter.getTransientRowCount(), false);
         }
         return true;
@@ -3943,10 +3945,43 @@ public class TableWriter implements TableWriterAPI, MetadataService, Closeable {
         }
     }
 
+    private void checkStringColClose(int colPos, MemoryMA mem, boolean truncate) {
+        if ((!truncate) || (mem == null))
+            return;
+
+        if (mem instanceof NullMemory)
+            return;
+
+        if (mem.getFd() == -1)
+            return;  // already closed
+
+        if (colPos % 2 == 0)  // primary column, ignore
+            return;
+
+        // This is an aux column
+        final int colIndex = (colPos - 1) / 2;
+        final int colType = metadata.getColumnType(colIndex);
+        if (ColumnType.tagOf(colType) != ColumnType.STRING)
+            return;
+
+        final long written = mem.getAppendOffset();
+
+        if (written == 0) {
+            assert mem instanceof MemoryPMARImpl;
+            final var m = (MemoryPMARImpl) mem;
+            final var memId = m.getId();
+            System.err.println("that's odd, memId: " + memId + ", provenance: " + MemoryPMARImpl.traceSrc(memId));
+            System.err.println();
+        }
+
+        assert written > 0;
+    }
+
     private void closeAppendMemoryTruncate(boolean truncate) {
         for (int i = 0, n = columns.size(); i < n; i++) {
             MemoryMA m = columns.getQuick(i);
             if (m != null) {
+                checkStringColClose(i, m, truncate);
                 m.close(truncate);
             }
         }
@@ -5242,7 +5277,7 @@ public class TableWriter implements TableWriterAPI, MetadataService, Closeable {
             closeActivePartition(false);
 
             if (index != 0) {
-                openPartition(prevTimestamp, newTransientRowCount);
+                openPartition(prevTimestamp, newTransientRowCount, MemoryM.ProvenanceToken.TW_DROP_PARTITION_BY_EXACT_TIMESTAMP);
                 setAppendPosition(newTransientRowCount, false);
             } else {
                 rowAction = ROW_ACTION_OPEN_PARTITION;
@@ -5328,7 +5363,7 @@ public class TableWriter implements TableWriterAPI, MetadataService, Closeable {
             updateO3ColumnTops();
         }
         if (!isEmptyTable() && (isLastPartitionClosed() || partitionTimestampHi > partitionTimestampHiLimit)) {
-            openPartition(txWriter.getLastPartitionTimestamp(), txWriter.getTransientRowCount());
+            openPartition(txWriter.getLastPartitionTimestamp(), txWriter.getTransientRowCount(), MemoryM.ProvenanceToken.TW_FINISH_O3_COMMIT);
         }
 
         // Data is written out successfully, however, we can still fail to set append position, for
@@ -6764,7 +6799,7 @@ public class TableWriter implements TableWriterAPI, MetadataService, Closeable {
         o3CommitBatchTimestampMin = Math.min(o3CommitBatchTimestampMin, timestamp);
     }
 
-    private void openColumnFiles(CharSequence name, long columnNameTxn, int columnIndex, int pathTrimToLen) {
+    private void openColumnFiles(CharSequence name, long columnNameTxn, int columnIndex, int pathTrimToLen, MemoryM.ProvenanceToken prov) {
         MemoryMA mem1 = getPrimaryColumn(columnIndex);
         MemoryMA mem2 = getSecondaryColumn(columnIndex);
 
@@ -6788,6 +6823,7 @@ public class TableWriter implements TableWriterAPI, MetadataService, Closeable {
                         configuration.getWriterFileOpenOpts(),
                         Files.POSIX_MADV_RANDOM
                 );
+                mem2.trackProvenance(prov);
             }
         } finally {
             path.trimTo(pathTrimToLen);
@@ -6795,11 +6831,11 @@ public class TableWriter implements TableWriterAPI, MetadataService, Closeable {
     }
 
     private void openLastPartitionAndSetAppendPosition(long ts) {
-        openPartition(ts, txWriter.getTransientRowCount() + txWriter.getLagRowCount());
+        openPartition(ts, txWriter.getTransientRowCount() + txWriter.getLagRowCount(), MemoryM.ProvenanceToken.TW_OPEN_LAST_PARTITION_AND_SET_APPEND_POSITION);
         setAppendPosition(txWriter.getTransientRowCount() + txWriter.getLagRowCount(), false);
     }
 
-    private void openNewColumnFiles(CharSequence name, int columnType, boolean indexFlag, int indexValueBlockCapacity) {
+    private void openNewColumnFiles(CharSequence name, int columnType, boolean indexFlag, int indexValueBlockCapacity, MemoryM.ProvenanceToken prov) {
         try {
             // open column files
             long partitionTimestamp = txWriter.getLastPartitionTimestamp();
@@ -6816,7 +6852,7 @@ public class TableWriter implements TableWriterAPI, MetadataService, Closeable {
                 createIndexFiles(name, columnNameTxn, indexValueBlockCapacity, plen, true);
             }
 
-            openColumnFiles(name, columnNameTxn, columnIndex, plen);
+            openColumnFiles(name, columnNameTxn, columnIndex, plen, prov);
             if (txWriter.getTransientRowCount() > 0) {
                 // write top offset to the column version file
                 columnVersionWriter.upsert(txWriter.getLastPartitionTimestamp(), columnIndex, columnNameTxn, txWriter.getTransientRowCount());
@@ -6830,7 +6866,14 @@ public class TableWriter implements TableWriterAPI, MetadataService, Closeable {
 
             // configure append position for variable length columns
             if (ColumnType.isVarSize(columnType)) {
-                ColumnType.getDriver(columnType).configureAuxMemMA(getSecondaryColumn(columnCount - 1));
+                final MemoryMA aux = getSecondaryColumn(columnCount - 1);
+                ColumnType.getDriver(columnType).configureAuxMemMA(aux);
+                if (columnType == ColumnType.STRING) {
+                    assert aux instanceof MemoryPMARImpl;
+                    final var secMem = (MemoryPMARImpl) aux;
+                    assert secMem.getAppendOffset() > 0;
+                    LOG.info().$("ensured min size for STRING column [table=").$(tableToken).$(", column=").$(name).$(", size=").$(secMem.getAppendOffset()).$(", memId").$(secMem.getId()).I$();
+                }
             }
 
             LOG.info().$("ADDED column '").$safe(name)
@@ -6843,7 +6886,7 @@ public class TableWriter implements TableWriterAPI, MetadataService, Closeable {
         }
     }
 
-    private void openPartition(long timestamp, long rowCount) {
+    private void openPartition(long timestamp, long rowCount, MemoryM.ProvenanceToken prov) {
         try {
             timestamp = txWriter.getPartitionTimestampByTimestamp(timestamp);
             lastOpenPartitionTxnName = setStateForTimestamp(path, timestamp);
@@ -6871,7 +6914,7 @@ public class TableWriter implements TableWriterAPI, MetadataService, Closeable {
                         createIndexFiles(name, columnNameTxn, metadata.getIndexValueBlockCapacity(i), plen, rowCount < 1);
                     }
 
-                    openColumnFiles(name, columnNameTxn, i, plen);
+                    openColumnFiles(name, columnNameTxn, i, plen, prov);
 
                     if (indexer != null) {
                         final long columnTop = columnVersionWriter.getColumnTopQuick(lastOpenPartitionTs, i);
@@ -7521,7 +7564,7 @@ public class TableWriter implements TableWriterAPI, MetadataService, Closeable {
                 // The table is empty, last partition does not exist
                 // WAL processing needs last partition to store LAG data
                 // Create artificial partition at the point of o3TimestampMin.
-                openPartition(o3TimestampMin, 0);
+                openPartition(o3TimestampMin, 0, MemoryM.ProvenanceToken.TW_PROCESS_WAL_COMMIT);
                 txWriter.setMaxTimestamp(o3TimestampMin);
                 // Add the partition to the list of partitions with 0 size.
                 txWriter.updatePartitionSizeByTimestamp(o3TimestampMin, 0, txWriter.getTxn() - 1);
@@ -10045,7 +10088,7 @@ public class TableWriter implements TableWriterAPI, MetadataService, Closeable {
         // files after switch.
         updateIndexes();
         txWriter.switchPartitions(timestamp);
-        openPartition(timestamp, 0);
+        openPartition(timestamp, 0, MemoryM.ProvenanceToken.TW_SWITCH_PARTITION);
         setAppendPosition(0, false);
     }
 
@@ -10356,6 +10399,7 @@ public class TableWriter implements TableWriterAPI, MetadataService, Closeable {
                     throw CairoException.critical(ff.errno()).put("cannot swap metadata file, invalid size: ").put(path);
                 }
                 ddlMem.of(ff, path.$(), ff.getPageSize(), len, MemoryTag.MMAP_TABLE_WRITER, CairoConfiguration.O_NONE, POSIX_MADV_RANDOM);
+                ddlMem.trackProvenance(MemoryM.ProvenanceToken.TW_VALIDATE_SWAP_META);
                 validationMap.clear();
                 validateMeta(ddlMem, validationMap, ColumnType.VERSION);
             } finally {
@@ -10670,7 +10714,7 @@ public class TableWriter implements TableWriterAPI, MetadataService, Closeable {
                 if (rollbackToMaxTimestamp > Long.MIN_VALUE) {
                     try {
                         txWriter.setMaxTimestamp(rollbackToMaxTimestamp);
-                        openPartition(rollbackToMaxTimestamp, rollbackToTransientRowCount);
+                        openPartition(rollbackToMaxTimestamp, rollbackToTransientRowCount, MemoryM.ProvenanceToken.TW_ROW_CANCEL);
                         setAppendPosition(rollbackToTransientRowCount, false);
                     } catch (Throwable e) {
                         freeColumns(false);

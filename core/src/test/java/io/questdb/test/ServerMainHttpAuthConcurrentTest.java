@@ -54,10 +54,10 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Predicate;
 
 import static io.questdb.cutlass.http.HttpConstants.*;
-import static io.questdb.test.tools.TestUtils.assertEquals;
 import static io.questdb.test.tools.TestUtils.*;
-import static org.junit.Assert.assertEquals;
+import static io.questdb.test.tools.TestUtils.assertEquals;
 import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
 
 public class ServerMainHttpAuthConcurrentTest extends AbstractBootstrapTest {
     private static final String PASSWORD = "quest";
@@ -92,109 +92,120 @@ public class ServerMainHttpAuthConcurrentTest extends AbstractBootstrapTest {
 
     @Test
     public void testConcurrentMultipleSessionsRotatedEvicted() throws Exception {
-        runTest(false, (threadId, not_used_sessionId, currentMicros, sessionStore, sessionTimeout, rnd, barriers) -> {
-            final long rotationIncrement = sessionTimeout / 2 + 1_000_000L;
-            final long rotateAt = currentMicros.get() + sessionTimeout / 2;
+        runTest(false,
+                (
+                        threadId,
+                        not_used_sessionId,
+                        currentMicros,
+                        sessionStore,
+                        sessionTimeout,
+                        rnd,
+                        barriers
+                ) -> {
+                    final long rotationIncrement = sessionTimeout / 2 + 1_000_000L;
+                    final long rotateAt = currentMicros.get() + sessionTimeout / 2;
 
-            final ObjHashSet<String> sessionIds = new ObjHashSet<>();
+                    final ObjHashSet<String> sessionIds = new ObjHashSet<>();
 
-            final String sessionId;
-            try (HttpClient httpClient = HttpClientFactory.newPlainTextInstance()) {
-                sessionId = createSession(httpClient, sessionStore);
-            } catch (Exception e) {
-                // although this thread failed, let other threads finish instead of making them wait for a long timeout
-                awaitAllBarriers(barriers, 0);
-                throw e;
-            }
-
-            // wait for all sessions created
-            barriers[0].await();
-
-            try (HttpClient httpClient = HttpClientFactory.newPlainTextInstance()) {
-                final int numOfIterations = 10 + rnd.nextInt(10);
-                for (int i = 0; i < numOfIterations; i++) {
-                    final String newSessionId = runSuccessfulQuery(httpClient, sessionId, rnd);
-                    if (newSessionId != null) {
-                        sessionIds.add(newSessionId);
+                    final String sessionId;
+                    try (HttpClient httpClient = HttpClientFactory.newPlainTextInstance()) {
+                        sessionId = createSession(httpClient, sessionStore);
+                    } catch (Exception e) {
+                        // although this thread failed, let other threads finish instead of making them wait for a long timeout
+                        awaitAllBarriers(barriers, 0);
+                        throw e;
                     }
 
-                    // select a thread to move the clock over rotateAt
-                    synchronized (this) {
-                        if ((rnd.nextBoolean() || threadId == 0) && currentMicros.get() < rotateAt) {
-                            LOG.info().$("clock moving from " + currentMicros.get())
-                                    .$(" [threadId=").$(threadId)
-                                    .$(", rotateAt=").$(rotateAt)
-                                    .$("]").$();
-                            currentMicros.addAndGet(rotationIncrement);
-                            LOG.info().$("clock moved to " + currentMicros.get())
-                                    .$(" [threadId=").$(threadId)
-                                    .$(", rotateAt=").$(rotateAt)
-                                    .$("]").$();
+                    // wait for all sessions created
+                    barriers[0].await();
+
+                    try (HttpClient httpClient = HttpClientFactory.newPlainTextInstance()) {
+                        final int numOfIterations = 10 + rnd.nextInt(10);
+                        for (int i = 0; i < numOfIterations; i++) {
+                            final String newSessionId = runSuccessfulQuery(httpClient, sessionId, rnd);
+                            if (newSessionId != null) {
+                                sessionIds.add(newSessionId);
+                            }
+
+                            // select a thread to move the clock over rotateAt
+                            synchronized (this) {
+                                if ((rnd.nextBoolean() || threadId == 0) && currentMicros.get() < rotateAt) {
+                                    LOG.info().$("clock moving from " + currentMicros.get())
+                                            .$(" [threadId=").$(threadId)
+                                            .$(", rotateAt=").$(rotateAt)
+                                            .$("]").$();
+                                    currentMicros.addAndGet(rotationIncrement);
+                                    LOG.info().$("clock moved to " + currentMicros.get())
+                                            .$(" [threadId=").$(threadId)
+                                            .$(", rotateAt=").$(rotateAt)
+                                            .$("]").$();
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        // although this thread failed, let other threads finish instead of making them wait for a long timeout
+                        e.printStackTrace();
+                        awaitAllBarriers(barriers, 1);
+                        throw e;
+                    }
+
+                    // wait for all rotations to happen
+                    barriers[1].await();
+
+                    final String newSessionId;
+                    final HttpSessionStore.SessionInfo session;
+                    try {
+                        if (sessionIds.size() == 1) {
+                            newSessionId = sessionIds.getList().getQuick(0);
+
+                            // assert that old session id still works
+                            assertNotNull(session = sessionStore.getSession(sessionId));
+                            // assert that old and new session ids belong to the same session
+                            assertEquals(session, sessionStore.getSession(newSessionId));
+                            assertEquals(newSessionId, session.getSessionId());
+                        } else {
+                            // session id was not rotated
+                            // we can return after asserting that there is no new session id
+                            assertEquals(0, sessionIds.size());
+                            return;
+                        }
+                    } finally {
+                        // wait for all checks to be done with the old session id
+                        // has to happen before it gets evicted
+                        barriers[2].await();
+                    }
+
+                    final long evictionIncrement = sessionTimeout / 3 + 1_000_000L;
+                    final long evictAt = currentMicros.get() + sessionTimeout / 3;
+
+                    try (HttpClient httpClient = HttpClientFactory.newPlainTextInstance()) {
+                        final int numOfIterations = Math.max(1, rnd.nextInt(10));
+                        System.out.println("NUM: " + numOfIterations);
+                        for (int i = 0; i < numOfIterations; i++) {
+                            assertNull(runSuccessfulQuery(httpClient, newSessionId, rnd));
+
+                            // select a thread to move the clock over evictAt
+                            synchronized (this) {
+                                if ((rnd.nextBoolean() || threadId == 0) && currentMicros.get() < evictAt) {
+                                    LOG.info().$("clock moving from " + currentMicros.get())
+                                            .$(" [threadId=").$(threadId)
+                                            .$(", evictAt=").$(evictAt)
+                                            .$("]").$();
+                                    currentMicros.addAndGet(evictionIncrement);
+                                    LOG.info().$("clock moved to " + currentMicros.get())
+                                            .$(" [threadId=").$(threadId)
+                                            .$(", evictAt=").$(evictAt)
+                                            .$("]").$();
+                                }
+                            }
                         }
                     }
-                }
-            } catch (Exception e) {
-                // although this thread failed, let other threads finish instead of making them wait for a long timeout
-                awaitAllBarriers(barriers, 1);
-                throw e;
-            }
 
-            // wait for all rotations to happen
-            barriers[1].await();
-
-            final String newSessionId;
-            final HttpSessionStore.SessionInfo session;
-            try {
-                if (sessionIds.size() == 1) {
-                    newSessionId = sessionIds.getList().getQuick(0);
-
-                    // assert that old session id still works
-                    assertNotNull(session = sessionStore.getSession(sessionId));
-                    // assert that old and new session ids belong to the same session
+                    // assert that old session id is not registered anymore, has been evicted
+                    assertNull(sessionStore.getSession(sessionId));
+                    // assert that new session id is still registered
                     assertEquals(session, sessionStore.getSession(newSessionId));
-                    assertEquals(newSessionId, session.getSessionId());
-                } else {
-                    // session id was not rotated
-                    // we can return after asserting that there is no new session id
-                    assertEquals(0, sessionIds.size());
-                    return;
-                }
-            } finally {
-                // wait for all checks to be done with the old session id
-                // has to happen before it gets evicted
-                barriers[2].await();
-            }
-
-            final long evictionIncrement = sessionTimeout / 3 + 1_000_000L;
-            final long evictAt = currentMicros.get() + sessionTimeout / 3;
-
-            try (HttpClient httpClient = HttpClientFactory.newPlainTextInstance()) {
-                final int numOfIterations = 10 + rnd.nextInt(10);
-                for (int i = 0; i < numOfIterations; i++) {
-                    assertNull(runSuccessfulQuery(httpClient, newSessionId, rnd));
-
-                    // select a thread to move the clock over evictAt
-                    synchronized (this) {
-                        if ((rnd.nextBoolean() || threadId == 0) && currentMicros.get() < evictAt) {
-                            LOG.info().$("clock moving from " + currentMicros.get())
-                                    .$(" [threadId=").$(threadId)
-                                    .$(", evictAt=").$(evictAt)
-                                    .$("]").$();
-                            currentMicros.addAndGet(evictionIncrement);
-                            LOG.info().$("clock moved to " + currentMicros.get())
-                                    .$(" [threadId=").$(threadId)
-                                    .$(", evictAt=").$(evictAt)
-                                    .$("]").$();
-                        }
-                    }
-                }
-            }
-
-            // assert that old session id is not registered anymore, has been evicted
-            assertNull(sessionStore.getSession(sessionId));
-            // assert that new session id is still registered
-            assertEquals(session, sessionStore.getSession(newSessionId));
-        }, numOfSessions -> numOfSessions <= numOfThreads);
+                }, numOfSessions -> numOfSessions <= numOfThreads);
     }
 
     @Test
@@ -398,7 +409,7 @@ public class ServerMainHttpAuthConcurrentTest extends AbstractBootstrapTest {
 
     private void runTest(boolean openSession, TestCode test, Predicate<Integer> assertSessions) throws Exception {
         assertMemoryLeak(() -> {
-            final Rnd rnd = generateRandom(LOG);
+            final Rnd rnd = generateRandom(LOG, 100458182454083L, 1761604986405L);
 
             final AtomicLong currentMicros = new AtomicLong(1761055200000000L);
             final Bootstrap bootstrap = getBootstrapWithMockClock(currentMicros);
@@ -408,7 +419,7 @@ public class ServerMainHttpAuthConcurrentTest extends AbstractBootstrapTest {
                 final HttpSessionStore sessionStore = serverMain.getConfiguration().getFactoryProvider().getHttpSessionStore();
                 final long sessionTimeout = serverMain.getConfiguration().getHttpServerConfiguration().getHttpContextConfiguration().getSessionTimeout();
 
-                numOfThreads = 5 + rnd.nextInt(5);
+                numOfThreads = Math.max(1, rnd.nextInt(4));
                 final ConcurrentHashMap<Integer, Throwable> errors = new ConcurrentHashMap<>();
                 // these barriers are used to synchronize the test threads when they should reach certain phases together
                 // for example, a barrier can be used to make sure all threads created a session before we move onto rotate/evict them

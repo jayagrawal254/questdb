@@ -62,7 +62,7 @@ import java.io.Closeable;
 
 public abstract class AbstractLineHttpSender implements Sender {
     private static final String PATH = "/write?precision=n";
-    private static final int RETRY_BACKOFF_MULTIPLIER = 2;
+    private static final double RETRY_BACKOFF_MULTIPLIER = 1.2;
     private static final int RETRY_INITIAL_BACKOFF_MS = 10;
     private static final int RETRY_MAX_JITTER_MS = 10;
     private final String authToken;
@@ -550,7 +550,7 @@ public abstract class AbstractLineHttpSender implements Sender {
         int jitter = rnd.nextInt(RETRY_MAX_JITTER_MS);
         int backoff = retryBackoff + jitter;
         Os.sleep(backoff);
-        return Math.min(retryMaxBackoffMs, backoff * RETRY_BACKOFF_MULTIPLIER);
+        return Math.min(retryMaxBackoffMs, (int)(backoff * RETRY_BACKOFF_MULTIPLIER));
     }
 
     private static void chunkedResponseToSink(HttpClient.ResponseHeaders response, StringSink sink) {

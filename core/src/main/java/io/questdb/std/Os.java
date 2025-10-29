@@ -240,6 +240,14 @@ public final class Os {
         }
     }
 
+    public static void sleepInterruptible(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            // intentionally not restoring interrupted status
+        }
+    }
+
     public static native long smokeTest(long a, long b);
 
     private static native long forkExec(long argv);

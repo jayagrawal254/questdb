@@ -100,6 +100,7 @@ public class Worker extends Thread {
 
     public void halt() {
         lifecycle.set(Lifecycle.HALTED);
+        interrupt();
     }
 
     @Override
@@ -179,11 +180,11 @@ public class Worker extends Thread {
                         ticker = sleepThreshold + 1; // overflow
                     }
                     if (ticker > sleepThreshold) {
-                        Os.sleep(sleepMs);
+                        Os.sleepInterruptible(sleepMs);
                     } else if (ticker > napThreshold) {
-                        Os.sleep(1);
+                        Os.sleepInterruptible(1);
                     } else if (ticker > yieldThreshold) {
-                        Os.pause();
+                        Os.sleepInterruptible(0);
                     }
                 }
             }

@@ -143,7 +143,7 @@ public class TestListener extends RunListener {
     }
 
     static {
-        installNoExitSecurityManager();
+//        installNoExitSecurityManager();
     }
 
     static {

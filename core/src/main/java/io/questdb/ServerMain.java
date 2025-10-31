@@ -139,12 +139,14 @@ public class ServerMain implements Closeable {
                 e.printStackTrace();
             }
             LogFactory.closeInstance();
-            System.exit(55);
+            throw e; // HACK!!!
+//            System.exit(55);
         } catch (Throwable thr) {
             //noinspection CallToPrintStackTrace
             thr.printStackTrace();
             LogFactory.closeInstance();
-            System.exit(55);
+//            System.exit(55);
+            throw thr; // HACK!
         }
     }
 

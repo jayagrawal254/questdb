@@ -41,10 +41,12 @@ public class TestListener extends RunListener {
     private static final Log LOG = LogFactory.getLog(TestListener.class);
     long testStartMs = -1;
 
-    private static class NoExitSecurityManager extends SecurityManager {
+    private static class LogExitSecurityManager extends SecurityManager {
         @Override
         public void checkExit(int status) {
-            throw new SecurityException("System.exit(" + status + ") blocked by test SecurityManager");
+            System.out.println("Asked to exit");
+            Os.sleep(1000);
+//            throw new SecurityException("System.exit(" + status + ") blocked by test SecurityManager");
         }
 
         @Override
@@ -131,19 +133,18 @@ public class TestListener extends RunListener {
 
     @SuppressWarnings("removal")
     public static void installNoExitSecurityManager() {
-        // Install SecurityManager to prevent System.exit() and Runtime.halt() from killing the test JVM
         try {
-            SecurityManager sm = new NoExitSecurityManager();
+            SecurityManager sm = new LogExitSecurityManager();
             System.setSecurityManager(sm);
-            System.out.println("NoExitSecurityManager installed - System.exit() and Runtime.halt() will be blocked");
+            System.out.println("LogExitSecurityManager installed - System.exit() and Runtime.halt() will be logged");
         } catch (SecurityException e) {
             // SecurityManager already set, or not allowed - continue anyway
-            System.err.println("Warning: Could not install NoExitSecurityManager: " + e.getMessage());
+            System.err.println("Warning: Could not install LogExitSecurityManager: " + e.getMessage());
         }
     }
 
     static {
-//        installNoExitSecurityManager();
+        installNoExitSecurityManager();
     }
 
     static {

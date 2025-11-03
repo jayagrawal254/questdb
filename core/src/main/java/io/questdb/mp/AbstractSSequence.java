@@ -24,8 +24,11 @@
 
 package io.questdb.mp;
 
+import java.util.concurrent.TimeUnit;
+
 //single consumer or producer sequence
 abstract class AbstractSSequence extends AbstractSequence implements Sequence {
+    private static final long MAX_BULLY_NANOS = TimeUnit.SECONDS.toNanos(30);
 
     AbstractSSequence(WaitStrategy waitStrategy) {
         super(waitStrategy);
@@ -43,8 +46,12 @@ abstract class AbstractSSequence extends AbstractSequence implements Sequence {
     @Override
     public long nextBully() {
         long cursor;
-        while ((cursor = next()) < 0) {
+        long deadline = System.nanoTime() + MAX_BULLY_NANOS;
+        while ((cursor = next()) < 0 && deadline > System.nanoTime()) {
             bully();
+        }
+        if (cursor < 0) {
+            throw new RuntimeException("cursor is negative");
         }
         return cursor;
     }

@@ -43,6 +43,7 @@ import io.questdb.cairo.mv.MatViewStateStoreImpl;
 import io.questdb.cairo.mv.MatViewTimerTask;
 import io.questdb.cairo.mv.NoOpMatViewStateStore;
 import io.questdb.cairo.pool.AbstractMultiTenantPool;
+import io.questdb.cairo.pool.AutoRefreshingReaderPool;
 import io.questdb.cairo.pool.PoolListener;
 import io.questdb.cairo.pool.ReaderPool;
 import io.questdb.cairo.pool.ResourcePoolSupervisor;
@@ -154,7 +155,7 @@ public class CairoEngine implements Closeable, WriterSource {
     private final Metrics metrics;
     private final PartitionOverwriteControl partitionOverwriteControl = new PartitionOverwriteControl();
     private final QueryRegistry queryRegistry;
-    private final ReaderPool readerPool;
+    private final AutoRefreshingReaderPool readerPool;
     private final SqlExecutionContext rootExecutionContext;
     private final TxnScoreboardPool scoreboardPool;
     private final SequencerMetadataPool sequencerMetadataPool;
@@ -194,7 +195,7 @@ public class CairoEngine implements Closeable, WriterSource {
             // Message bus and metrics must be initialized before the pools.
             this.writerPool = new WriterPool(configuration, this);
             this.scoreboardPool = TxnScoreboardPoolFactory.createPool(configuration);
-            this.readerPool = new ReaderPool(configuration, scoreboardPool, messageBus, partitionOverwriteControl);
+            this.readerPool = new AutoRefreshingReaderPool(configuration, scoreboardPool, messageBus, partitionOverwriteControl);
             this.sequencerMetadataPool = new SequencerMetadataPool(configuration, this);
             this.tableMetadataPool = new TableMetadataPool(configuration);
             this.walWriterPool = new WalWriterPool(configuration, this);
@@ -498,7 +499,8 @@ public class CairoEngine implements Closeable, WriterSource {
     }
 
     public void configureThreadLocalReaderPoolSupervisor(@NotNull ResourcePoolSupervisor<ReaderPool.R> supervisor) {
-        readerPool.configureThreadLocalPoolSupervisor(supervisor);
+        // todo: NOT IMPLEMENTED YET
+//        readerPool.configureThreadLocalPoolSupervisor(supervisor);
     }
 
     public @NotNull MatViewDefinition createMatView(
@@ -812,7 +814,7 @@ public class CairoEngine implements Closeable, WriterSource {
     }
 
     public Map<CharSequence, AbstractMultiTenantPool.Entry<ReaderPool.R>> getReaderPoolEntries() {
-        return readerPool.entries();
+        throw new UnsupportedOperationException("not implemented for AutoRefreshingReaderPool yet");
     }
 
     public TableReader getReaderWithRepair(TableToken tableToken) {
@@ -1464,7 +1466,7 @@ public class CairoEngine implements Closeable, WriterSource {
 
     @TestOnly
     public void setReaderListener(ReaderPool.ReaderListener readerListener) {
-        readerPool.setTableReaderListener(readerListener);
+        throw new UnsupportedOperationException("not implemented for AutoRefreshingReaderPool yet");
     }
 
     @TestOnly

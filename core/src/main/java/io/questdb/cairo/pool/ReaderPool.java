@@ -57,5 +57,7 @@ public interface ReaderPool<T extends TableReader> extends ResourcePool<T>, Clos
 
     void setPoolListener(PoolListener poolListener);
 
+    void setTableReaderListener(RefreshOnAcquireReaderPool.ReaderListener readerListener);
+
     void unlock(TableToken tableToken);
 }

@@ -128,6 +128,7 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 
 import java.io.Closeable;
+import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -505,8 +506,10 @@ public class CairoEngine implements Closeable, WriterSource {
     }
 
     public void configureThreadLocalReaderPoolSupervisor(@NotNull ResourcePoolSupervisor<RefreshOnAcquireReaderPool.R> supervisor) {
-        // todo: NOT IMPLEMENTED YET
-//        readerPool.configureThreadLocalPoolSupervisor(supervisor);
+//         todo: NOT IMPLEMENTED FOR AUTO REFRESHING POOLS YET
+        if (readerPool instanceof RefreshOnAcquireReaderPool) {
+            ((RefreshOnAcquireReaderPool) readerPool).configureThreadLocalPoolSupervisor(supervisor);
+        }
     }
 
     public @NotNull MatViewDefinition createMatView(
@@ -820,7 +823,11 @@ public class CairoEngine implements Closeable, WriterSource {
     }
 
     public Map<CharSequence, AbstractMultiTenantPool.Entry<RefreshOnAcquireReaderPool.R>> getReaderPoolEntries() {
-        throw new UnsupportedOperationException("not implemented for AutoRefreshingReaderPool yet");
+        if (readerPool instanceof RefreshOnAcquireReaderPool) {
+            return ((RefreshOnAcquireReaderPool) readerPool).entries();
+        }
+        // todo: implement for AutoRefreshing pool
+        return Collections.emptyMap();
     }
 
     public TableReader getReaderWithRepair(TableToken tableToken) {
@@ -1476,7 +1483,7 @@ public class CairoEngine implements Closeable, WriterSource {
 
     @TestOnly
     public void setReaderListener(RefreshOnAcquireReaderPool.ReaderListener readerListener) {
-        throw new UnsupportedOperationException("not implemented for AutoRefreshingReaderPool yet");
+        readerPool.setTableReaderListener(readerListener);
     }
 
     @TestOnly

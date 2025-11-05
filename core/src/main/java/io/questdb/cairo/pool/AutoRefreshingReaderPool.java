@@ -66,7 +66,7 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ReaderPool
     private final PartitionOverwriteControl partitionOverwriteControl;
     private final ThreadLocal<ResourcePoolSupervisor<R>> threadLocalPoolSupervisor;
     private final TxnScoreboardPool txnScoreboardPool;
-    private ReaderListener readerListener;
+    private RefreshOnAcquireReaderPool.ReaderListener readerListener;
 
     public AutoRefreshingReaderPool(CairoConfiguration configuration, TxnScoreboardPool scoreboardPool, MessageBus messageBus, PartitionOverwriteControl partitionOverwriteControl) {
         super(configuration, configuration.getInactiveReaderTTL());
@@ -238,7 +238,7 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ReaderPool
     }
 
     @TestOnly
-    public void setTableReaderListener(ReaderListener readerListener) {
+    public void setTableReaderListener(RefreshOnAcquireReaderPool.ReaderListener readerListener) {
         this.readerListener = readerListener;
     }
 
@@ -532,12 +532,6 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ReaderPool
                 .put(", index=").put(index).put(']');
     }
 
-    @TestOnly
-    @FunctionalInterface
-    public interface ReaderListener {
-        void onOpenPartition(TableToken tableToken, int partitionIndex);
-    }
-
     public static final class Entry {
         private final long[] allocations = new long[ENTRY_SIZE];
         private final int index;
@@ -581,7 +575,7 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ReaderPool
 
     public static class R extends TableReader implements Sinkable {
         private final int index;
-        private final ReaderListener readerListener;
+        private final RefreshOnAcquireReaderPool.ReaderListener readerListener;
         private boolean detached;
         // Reference counter that may be used to track usage of detached readers.
         // A reader may be obtained from the pool and closed on different threads,
@@ -599,7 +593,7 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ReaderPool
                 TableToken tableToken,
                 TxnScoreboardPool txnScoreboardPool,
                 MessageBus messageBus,
-                ReaderListener readerListener,
+                RefreshOnAcquireReaderPool.ReaderListener readerListener,
                 PartitionOverwriteControl partitionOverwriteControl,
                 ResourcePoolSupervisor<R> supervisor
         ) {
@@ -618,7 +612,7 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ReaderPool
                 R srcReader,
                 TxnScoreboardPool txnScoreboardPool,
                 MessageBus messageBus,
-                ReaderListener readerListener,
+                RefreshOnAcquireReaderPool.ReaderListener readerListener,
                 PartitionOverwriteControl partitionOverwriteControl,
                 ResourcePoolSupervisor<R> supervisor
         ) {

@@ -325,6 +325,7 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ResourcePo
                             // when a user does not ask a specific txn (a copy of another reader) then we do not refresh
                             // instead, we rely on the background refresh job and we return whatever txn is the reader
                             // currently pointing too.
+                            assert tenant.isActive(); // invariant: available readers are pinned to _some_ transaction at all times
                         } catch (Throwable th) {
                             tenant.goodbye();
                             tenant.close();

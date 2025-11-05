@@ -319,13 +319,16 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ResourcePo
                     } else {
                         try {
                             if (copyOfTenant != null) {
-                                // when asking for specific txn forces refresh
+                                // when a caller is asking for specific txn we force refresh
                                 tenant.refreshAt(supervisor, copyOfTenant);
+                            } else if (!tenant.isActive()) {
+                                // edge-case: readers can be in a pool without being pinned to a transaction.
+                                // this can happen after an exception
+                                tenant.refresh(supervisor);
                             }
-                            // when a user does not ask a specific txn (a copy of another reader) then we do not refresh
-                            // instead, we rely on the background refresh job and we return whatever txn is the reader
-                            // currently pointing too.
-                            assert tenant.isActive(); // invariant: available readers are pinned to _some_ transaction at all times
+                            // the most common case: a caller did not ask for a specific transaction
+                            // -> we rely on the background job to have a reader pinned to a recent-enough transaction
+                            // so we don't refresh now. why? refresh can be slow and we don't want to have it on a reading path.
                         } catch (Throwable th) {
                             tenant.goodbye();
                             tenant.close();
@@ -336,6 +339,7 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ResourcePo
                         notifyListener(thread, tableToken, PoolListener.EV_GET, e.index, i);
                     }
 
+                    // todo: explore side-effects of not reloading readers, but updating tokens
                     if (isClosed()) {
                         e.assignTenant(i, null);
                         tenant.goodbye();

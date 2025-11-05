@@ -204,6 +204,29 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ResourcePo
         return true;
     }
 
+    public void refreshAllUnallocatedReaders() {
+        // todo: start with the most stale reader
+        long thread = Thread.currentThread().getId();
+        for (AutoRefreshingReaderPool.Entry e : entries.values()) {
+            do {
+                for (int i = 0; i < ENTRY_SIZE; i++) {
+                    R r;
+                    if ((r = e.getTenant(i)) != null) {
+                        if (Unsafe.cas(e.allocations, i, UNALLOCATED, thread)) {
+                            try {
+                                // todo: handle errors
+                                r.refresh(null);
+                            } finally {
+                                Unsafe.arrayPutOrdered(e.allocations, i, UNALLOCATED);
+                            }
+                        }
+                    }
+                }
+                e = e.next;
+            } while (e != null);
+        }
+    }
+
     public void removeThreadLocalPoolSupervisor() {
         this.threadLocalPoolSupervisor.remove();
     }

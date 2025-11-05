@@ -1264,6 +1264,10 @@ public class CairoEngine implements Closeable, WriterSource {
         tableNameRegistry.reconcile();
     }
 
+    public void refreshTableReaders() {
+        readerPool.refreshAllUnallocatedReaders();
+    }
+
     public void registerTableToken(TableToken tableToken) {
         tableNameRegistry.registerName(tableToken);
     }

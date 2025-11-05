@@ -186,6 +186,13 @@ public class ServerMain implements Closeable {
         }
     }
 
+    public long getActiveConnectionCount(String processorName) {
+        if (httpServer == null) {
+            return 0;
+        }
+        return httpServer.getActiveConnectionTracker().getActiveConnections(processorName);
+    }
+
     public ServerConfiguration getConfiguration() {
         return bootstrap.getConfiguration();
     }
@@ -202,13 +209,6 @@ public class ServerMain implements Closeable {
             return httpServer.getPort();
         }
         throw CairoException.nonCritical().put("http server is not running");
-    }
-
-    public long getActiveConnectionCount(String processorName) {
-        if (httpServer == null) {
-            return 0;
-        }
-        return httpServer.getActiveConnectionTracker().getActiveConnections(processorName);
     }
 
     public int getPgWireServerPort() {
@@ -294,6 +294,9 @@ public class ServerMain implements Closeable {
                     if (engineMaintenanceJob != null) {
                         sharedPoolWrite.assign(engineMaintenanceJob);
                     }
+                    EngineRefreshReadersJob refreshReadersJob = new EngineRefreshReadersJob(engine);
+                    sharedPoolQuery.assign(refreshReadersJob);
+                    
                     WorkerPoolUtils.setupQueryJobs(sharedPoolQuery, engine);
 
                     if (!config.getCairoConfiguration().isReadOnlyInstance()) {
@@ -513,6 +516,31 @@ public class ServerMain implements Closeable {
             if (last + checkInterval < t) {
                 last = t;
                 return engine.releaseInactive();
+            }
+            return false;
+        }
+    }
+
+    public static class EngineRefreshReadersJob extends SynchronizedJob {
+        private final long checkInterval;
+        private final Clock clock;
+        private final CairoEngine engine;
+        private long last = 0;
+
+        public EngineRefreshReadersJob(CairoEngine engine) {
+            final CairoConfiguration configuration = engine.getConfiguration();
+            this.engine = engine;
+            this.clock = configuration.getMicrosecondClock();
+            this.checkInterval = 100 * 1000; // 10ms, todo: configurable
+        }
+
+        @Override
+        protected boolean runSerially() {
+            long t = clock.getTicks();
+            if (last + checkInterval < t) {
+                last = t;
+                engine.refreshTableReaders();
+                return true;
             }
             return false;
         }

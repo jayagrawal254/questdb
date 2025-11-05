@@ -296,10 +296,12 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ResourcePo
                     } else {
                         try {
                             if (copyOfTenant != null) {
+                                // when asking for specific txn forces refresh
                                 tenant.refreshAt(supervisor, copyOfTenant);
-                            } else {
-                                tenant.refresh(supervisor);
                             }
+                            // when a user does not ask a specific txn (a copy of another reader) then we do not refresh
+                            // instead, we rely on the background refresh job and we return whatever txn is the reader
+                            // currently pointing too.
                         } catch (Throwable th) {
                             tenant.goodbye();
                             tenant.close();
@@ -637,7 +639,9 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ResourcePo
                         supervisor.onResourceReturned(this);
                         supervisor = null;
                     }
-                    goPassive();
+                    // note: we don't ever go passive when returning to a pool - the reader remains pinned to whatever transaction it was on
+
+
                     final AutoRefreshingReaderPool pool = this.pool;
                     if (pool == null || entry == null || !pool.returnToPool(this)) {
                         super.close();

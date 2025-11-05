@@ -536,7 +536,6 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ReaderPool
         private final long[] allocations = new long[ENTRY_SIZE];
         private final int index;
         private final long[] releaseOrAcquireTimes = new long[ENTRY_SIZE];
-        @SuppressWarnings("unchecked")
         private final R[] tenants = new R[ENTRY_SIZE];
         int nextStatus = NEXT_OPEN;
         private volatile long lockOwner = -1L;

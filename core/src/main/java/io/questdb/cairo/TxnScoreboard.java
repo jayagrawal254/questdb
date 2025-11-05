@@ -24,6 +24,7 @@
 
 package io.questdb.cairo;
 
+import io.questdb.cairo.pool.RefreshOnAcquireReaderPool;
 import io.questdb.std.QuietCloseable;
 
 /**
@@ -47,7 +48,7 @@ public interface TxnScoreboard extends QuietCloseable {
      * Ignores min/max txn values and increments the counter. Must be called only when there is
      * an active reader that already acquired this txn.
      * <p>
-     * Used by {@link io.questdb.cairo.pool.ReaderPool#getCopyOf(TableReader)}.
+     * Used by {@link RefreshOnAcquireReaderPool#getCopyOf(TableReader)}.
      */
     boolean incrementTxn(int id, long txn);
 

@@ -28,7 +28,7 @@ import io.questdb.cairo.CairoException;
 import io.questdb.cairo.ColumnType;
 import io.questdb.cairo.PartitionBy;
 import io.questdb.cairo.TableReader;
-import io.questdb.cairo.pool.ReaderPool;
+import io.questdb.cairo.pool.RefreshOnAcquireReaderPool;
 import io.questdb.griffin.engine.QueryProgress;
 import io.questdb.log.LogFactory;
 import io.questdb.test.AbstractCairoTest;
@@ -60,7 +60,7 @@ public class ReaderLeftBehindTest extends AbstractCairoTest {
     @Test
     public void testClosePoolWhenReaderIsOut() throws Exception {
         assertMemoryLeak(() -> {
-            try (ReaderPool pool = new ReaderPool(configuration, engine.getTxnScoreboardPool(), messageBus)) {
+            try (RefreshOnAcquireReaderPool pool = new RefreshOnAcquireReaderPool(configuration, engine.getTxnScoreboardPool(), messageBus)) {
                 TableModel model = new TableModel(configuration, "x", PartitionBy.NONE).col("ts", ColumnType.DATE);
                 AbstractCairoTest.create(model);
 

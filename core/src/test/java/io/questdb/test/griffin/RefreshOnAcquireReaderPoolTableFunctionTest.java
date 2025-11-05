@@ -27,7 +27,7 @@ package io.questdb.test.griffin;
 import io.questdb.cairo.ColumnType;
 import io.questdb.cairo.PartitionBy;
 import io.questdb.cairo.TableReader;
-import io.questdb.cairo.pool.ReaderPool;
+import io.questdb.cairo.pool.RefreshOnAcquireReaderPool;
 import io.questdb.cairo.sql.Function;
 import io.questdb.cairo.sql.Record;
 import io.questdb.cairo.sql.RecordCursor;
@@ -51,7 +51,7 @@ import java.util.concurrent.Callable;
 
 import static org.junit.Assert.assertTrue;
 
-public class ReaderPoolTableFunctionTest extends AbstractCairoTest {
+public class RefreshOnAcquireReaderPoolTableFunctionTest extends AbstractCairoTest {
     @Test
     public void testCursorDoesHaveUpfrontSize() throws Exception {
         assertMemoryLeak(() -> {
@@ -116,7 +116,7 @@ public class ReaderPoolTableFunctionTest extends AbstractCairoTest {
             tm.timestamp("ts").col("ID", ColumnType.INT);
             createPopulateTable(tm, 20, "2020-01-01", 1);
 
-            int readerAcquisitionCount = ReaderPool.ENTRY_SIZE * 2;
+            int readerAcquisitionCount = RefreshOnAcquireReaderPool.ENTRY_SIZE * 2;
             long startTime = MicrosecondClockImpl.INSTANCE.getTicks();
             long threadId = Thread.currentThread().getId();
 
@@ -182,7 +182,7 @@ public class ReaderPoolTableFunctionTest extends AbstractCairoTest {
                 executeTx(tableName);
             }
 
-            int readerAcquisitionCount = ReaderPool.ENTRY_SIZE * 2;
+            int readerAcquisitionCount = RefreshOnAcquireReaderPool.ENTRY_SIZE * 2;
             long startTime = MicrosecondClockImpl.INSTANCE.getTicks();
             long threadId = Thread.currentThread().getId();
             long allReadersAcquiredTime = acquireReaderAndRun(tableName, readerAcquisitionCount, () -> {

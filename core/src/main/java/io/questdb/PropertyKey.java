@@ -58,6 +58,7 @@ public enum PropertyKey implements ConfigPropertyKey {
     CAIRO_MAX_SWAP_FILE_COUNT("cairo.max.swap.file.count"),
     CAIRO_PARALLEL_INDEX_THRESHOLD("cairo.parallel.index.threshold"),
     CAIRO_READER_POOL_MAX_SEGMENTS("cairo.reader.pool.max.segments"),
+    CAIRO_READER_POOL_AUTO_REFRESH_ENABLED("cairo.reader.pool.auto.refresh.enabled"),
     CAIRO_SPIN_LOCK_TIMEOUT("cairo.spin.lock.timeout"),
     CAIRO_CHARACTER_STORE_CAPACITY("cairo.character.store.capacity"),
     CAIRO_CHARACTER_STORE_SEQUENCE_POOL_CAPACITY("cairo.character.store.sequence.pool.capacity"),

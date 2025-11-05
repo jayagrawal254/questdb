@@ -34,7 +34,7 @@ import io.questdb.cairo.TxnScoreboardPool;
 import io.questdb.cairo.TxnScoreboardPoolFactory;
 import io.questdb.cairo.TxnScoreboardV1;
 import io.questdb.cairo.TxnScoreboardV2;
-import io.questdb.cairo.pool.ReaderPool;
+import io.questdb.cairo.pool.RefreshOnAcquireReaderPool;
 import io.questdb.mp.SOCountDownLatch;
 import io.questdb.std.Chars;
 import io.questdb.std.FilesFacade;
@@ -700,7 +700,7 @@ public class TxnScoreboardTest extends AbstractCairoTest {
     private void testHammerScoreboard(int readers, int iterations) throws Exception {
         int entryCount = Math.max(Numbers.ceilPow2(readers) * 8, Numbers.ceilPow2(iterations));
         setProperty(PropertyKey.CAIRO_O3_TXN_SCOREBOARD_ENTRY_COUNT, entryCount);
-        setProperty(PropertyKey.CAIRO_READER_POOL_MAX_SEGMENTS, (int) Math.ceil((double) readers / ReaderPool.ENTRY_SIZE));
+        setProperty(PropertyKey.CAIRO_READER_POOL_MAX_SEGMENTS, (int) Math.ceil((double) readers / RefreshOnAcquireReaderPool.ENTRY_SIZE));
         try (final TxnScoreboard scoreboard = newTxnScoreboard()) {
             final CyclicBarrier barrier = new CyclicBarrier(readers + 1);
             final CountDownLatch latch = new CountDownLatch(readers + 1);

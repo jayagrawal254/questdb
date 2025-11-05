@@ -34,7 +34,7 @@ import io.questdb.cairo.TableReader;
 import io.questdb.cairo.TableToken;
 import io.questdb.cairo.TableUtils;
 import io.questdb.cairo.pool.AbstractMultiTenantPool;
-import io.questdb.cairo.pool.ReaderPool;
+import io.questdb.cairo.pool.RefreshOnAcquireReaderPool;
 import io.questdb.cairo.sql.NoRandomAccessRecordCursor;
 import io.questdb.cairo.sql.Record;
 import io.questdb.cairo.sql.RecordCursor;
@@ -80,11 +80,11 @@ public final class ReaderPoolRecordCursorFactory extends AbstractRecordCursorFac
         private final ReaderPoolEntryRecord record = new ReaderPoolEntryRecord();
         private int allocationIndex = 0;
         private long currentTxn;
-        private Iterator<Map.Entry<CharSequence, AbstractMultiTenantPool.Entry<ReaderPool.R>>> iterator;
+        private Iterator<Map.Entry<CharSequence, AbstractMultiTenantPool.Entry<RefreshOnAcquireReaderPool.R>>> iterator;
         private long lastAccessTimestamp;
         private long owner_thread;
-        private AbstractMultiTenantPool.Entry<ReaderPool.R> poolEntry;
-        private Map<CharSequence, AbstractMultiTenantPool.Entry<ReaderPool.R>> readerPoolEntries;
+        private AbstractMultiTenantPool.Entry<RefreshOnAcquireReaderPool.R> poolEntry;
+        private Map<CharSequence, AbstractMultiTenantPool.Entry<RefreshOnAcquireReaderPool.R>> readerPoolEntries;
         private TableToken tableToken;
 
         @Override
@@ -119,7 +119,7 @@ public final class ReaderPoolRecordCursorFactory extends AbstractRecordCursorFac
             return true;
         }
 
-        public void of(Map<CharSequence, AbstractMultiTenantPool.Entry<ReaderPool.R>> readerPoolEntries) {
+        public void of(Map<CharSequence, AbstractMultiTenantPool.Entry<RefreshOnAcquireReaderPool.R>> readerPoolEntries) {
             this.readerPoolEntries = readerPoolEntries;
             toTop();
         }
@@ -150,10 +150,10 @@ public final class ReaderPoolRecordCursorFactory extends AbstractRecordCursorFac
                     if (!iterator.hasNext()) {
                         return false;
                     }
-                    Map.Entry<CharSequence, AbstractMultiTenantPool.Entry<ReaderPool.R>> mapEntry = iterator.next();
+                    Map.Entry<CharSequence, AbstractMultiTenantPool.Entry<RefreshOnAcquireReaderPool.R>> mapEntry = iterator.next();
                     poolEntry = mapEntry.getValue();
                     return true;
-                } else if (allocationIndex == ReaderPool.ENTRY_SIZE) {
+                } else if (allocationIndex == RefreshOnAcquireReaderPool.ENTRY_SIZE) {
                     // we exhausted all slots in the current Entry
                     // let's see if there is another Entry chained
                     poolEntry = poolEntry.getNext();

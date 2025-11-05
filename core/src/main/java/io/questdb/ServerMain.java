@@ -294,9 +294,11 @@ public class ServerMain implements Closeable {
                     if (engineMaintenanceJob != null) {
                         sharedPoolWrite.assign(engineMaintenanceJob);
                     }
-                    EngineRefreshReadersJob refreshReadersJob = new EngineRefreshReadersJob(engine);
-                    sharedPoolQuery.assign(refreshReadersJob);
-                    
+                    if (cairoConfig.useAutoRefreshingReaderPool()) {
+                        EngineRefreshReadersJob refreshReadersJob = new EngineRefreshReadersJob(engine);
+                        sharedPoolQuery.assign(refreshReadersJob);
+                    }
+
                     WorkerPoolUtils.setupQueryJobs(sharedPoolQuery, engine);
 
                     if (!config.getCairoConfiguration().isReadOnlyInstance()) {

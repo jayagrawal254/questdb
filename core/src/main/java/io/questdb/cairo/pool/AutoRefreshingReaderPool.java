@@ -48,7 +48,7 @@ import org.jetbrains.annotations.TestOnly;
 import java.util.Arrays;
 import java.util.Map;
 
-public class AutoRefreshingReaderPool extends AbstractPool implements ResourcePool<AutoRefreshingReaderPool.R> {
+public class AutoRefreshingReaderPool extends AbstractPool implements ReaderPool<AutoRefreshingReaderPool.R> {
 
     public static final int ENTRY_SIZE = 32;
     public final static String NO_LOCK_REASON = "unknown";
@@ -82,8 +82,9 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ResourcePo
         this(configuration, scoreboardPool, messageBus, null);
     }
 
+    @Override
     public void attach(TableReader reader) {
-        ReaderPool.R rdr = (ReaderPool.R) reader;
+        RefreshOnAcquireReaderPool.R rdr = (RefreshOnAcquireReaderPool.R) reader;
         rdr.attach();
     }
 
@@ -91,8 +92,9 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ResourcePo
         this.threadLocalPoolSupervisor.set(poolSupervisor);
     }
 
+    @Override
     public void detach(TableReader reader) {
-        ReaderPool.R rdr = (ReaderPool.R) reader;
+        RefreshOnAcquireReaderPool.R rdr = (RefreshOnAcquireReaderPool.R) reader;
         rdr.detach();
     }
 
@@ -105,6 +107,7 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ResourcePo
         return get0(tableToken, null);
     }
 
+    @Override
     public int getBusyCount() {
         int count = 0;
         for (Map.Entry<CharSequence, AutoRefreshingReaderPool.Entry> me : entries.entrySet()) {
@@ -125,30 +128,31 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ResourcePo
      * Returns a pooled table reader that is pointed at the same transaction number
      * as the source reader.
      */
-    public TableReader getCopyOf(TableReader srcReader) {
-        return getCopyOf((ReaderPool.R) srcReader);
+    @Override
+    public TableReader getCopyOf(TableReader srcTenant) {
+        return get0(srcTenant.getTableToken(), (R) srcTenant);
     }
 
+    @Override
     public int getDetachedRefCount(TableReader reader) {
-        return ((ReaderPool.R) reader).getDetachedRefCount();
+        return ((RefreshOnAcquireReaderPool.R) reader).getDetachedRefCount();
     }
 
     public int getMaxEntries() {
         return maxEntries;
     }
 
+    @Override
     public void incDetachedRefCount(TableReader reader) {
-        ((ReaderPool.R) reader).incrementDetachedRefCount();
+        ((RefreshOnAcquireReaderPool.R) reader).incrementDetachedRefCount();
     }
 
-    public boolean isCopyOfSupported() {
-        return true;
-    }
-
+    @Override
     public boolean isDetached(TableReader reader) {
-        return ((ReaderPool.R) reader).isDetached();
+        return ((RefreshOnAcquireReaderPool.R) reader).isDetached();
     }
 
+    @Override
     public boolean lock(TableToken tableToken) {
         AutoRefreshingReaderPool.Entry e = getEntry(tableToken);
         final long thread = Thread.currentThread().getId();
@@ -204,6 +208,7 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ResourcePo
         return true;
     }
 
+    @Override
     public void refreshAllUnallocatedReaders() {
         // todo: start with the most stale reader
         long thread = Thread.currentThread().getId();
@@ -227,6 +232,7 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ResourcePo
         }
     }
 
+    @Override
     public void removeThreadLocalPoolSupervisor() {
         this.threadLocalPoolSupervisor.remove();
     }
@@ -236,6 +242,7 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ResourcePo
         this.readerListener = readerListener;
     }
 
+    @Override
     public void unlock(TableToken tableToken) {
         AutoRefreshingReaderPool.Entry e = entries.get(tableToken.getDirName());
         long thread = Thread.currentThread().getId();
@@ -411,35 +418,6 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ResourcePo
     protected void closePool() {
         super.closePool();
         LOG.info().$("closed").$();
-    }
-
-    protected void expelFromPool(R tenant) {
-        final AutoRefreshingReaderPool.Entry e = tenant.getEntry();
-        if (e == null) {
-            return;
-        }
-
-        final TableToken tableToken = tenant.getTableToken();
-        final long thread = Thread.currentThread().getId();
-        final int index = tenant.getIndex();
-        final long owner = Unsafe.arrayGetVolatile(e.allocations, index);
-
-        if (owner != UNALLOCATED) {
-            LOG.debug().$("table is expelled [table=").$(tableToken)
-                    .$(", at=").$(e.index).$(':').$(index)
-                    .$(", thread=").$(thread)
-                    .I$();
-            notifyListener(thread, tableToken, PoolListener.EV_OUT_OF_POOL_CLOSE, e.index, index);
-            e.assignTenant(index, null);
-            Unsafe.cas(e.allocations, index, owner, UNALLOCATED);
-        }
-    }
-
-    protected R getCopyOf(@NotNull R srcTenant) {
-        if (!isCopyOfSupported()) {
-            throw new UnsupportedOperationException("getCopyOf is not supported by this pool");
-        }
-        return get0(srcTenant.getTableToken(), srcTenant);
     }
 
     protected byte getListenerSrc() {

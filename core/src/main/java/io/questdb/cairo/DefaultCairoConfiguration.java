@@ -1477,6 +1477,11 @@ public class DefaultCairoConfiguration implements CairoConfiguration {
     }
 
     @Override
+    public boolean useAutoRefreshingReaderPool() {
+        return false;
+    }
+
+    @Override
     public boolean useWithinLatestByOptimisation() {
         return false;
     }

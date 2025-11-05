@@ -34,7 +34,7 @@ import io.questdb.cairo.TableToken;
 import io.questdb.cairo.TableUtils;
 import io.questdb.cairo.TableWriter;
 import io.questdb.cairo.pool.PoolListener;
-import io.questdb.cairo.pool.ReaderPool;
+import io.questdb.cairo.pool.RefreshOnAcquireReaderPool;
 import io.questdb.cairo.pool.ex.EntryLockedException;
 import io.questdb.cairo.pool.ex.PoolClosedException;
 import io.questdb.mp.SOCountDownLatch;
@@ -75,7 +75,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.Assert.fail;
 
 @SuppressWarnings("CallToPrintStackTrace")
-public class ReaderPoolTest extends AbstractCairoTest {
+public class RefreshOnAcquireReaderPoolTest extends AbstractCairoTest {
     private TableToken uTableToken;
 
     @Before
@@ -263,7 +263,7 @@ public class ReaderPoolTest extends AbstractCairoTest {
 
         final Rnd seedRnd = TestUtils.generateRandom(LOG);
 
-        assertWithPool((ReaderPool pool) -> {
+        assertWithPool((RefreshOnAcquireReaderPool pool) -> {
             TableModel model = new TableModel(configuration, tableName, PartitionBy.HOUR)
                     .col("sym", ColumnType.SYMBOL)
                     .timestamp("ts");
@@ -446,7 +446,7 @@ public class ReaderPoolTest extends AbstractCairoTest {
             names[i] = engine.verifyTableName(name);
         }
 
-        assertWithPool((ReaderPool pool) -> {
+        assertWithPool((RefreshOnAcquireReaderPool pool) -> {
             final CyclicBarrier barrier = new CyclicBarrier(threadCount);
             final CountDownLatch halt = new CountDownLatch(threadCount);
             final AtomicInteger errors = new AtomicInteger();
@@ -775,7 +775,7 @@ public class ReaderPoolTest extends AbstractCairoTest {
         AbstractCairoTest.create(model);
         TableToken tableToken = engine.verifyTableName("x");
         assertWithPool(pool -> {
-            ReaderPool.R reader = pool.get(tableToken);
+            RefreshOnAcquireReaderPool.R reader = pool.get(tableToken);
             Assert.assertEquals(0, reader.getDetachedRefCount());
 
             pool.detach(reader);
@@ -990,7 +990,7 @@ public class ReaderPoolTest extends AbstractCairoTest {
         assertWithPool(new PoolAwareCode() {
 
             @Override
-            public void run(ReaderPool pool) throws Exception {
+            public void run(RefreshOnAcquireReaderPool pool) throws Exception {
                 TableModel model = new TableModel(configuration, "x", PartitionBy.NONE).col("ts", ColumnType.DATE);
                 AbstractCairoTest.create(model);
                 final TableToken nameX = engine.verifyTableName("x");
@@ -1001,7 +1001,7 @@ public class ReaderPoolTest extends AbstractCairoTest {
                 }
             }
 
-            private void testLockBusyReaderRollTheDice(ReaderPool pool, TableToken nameX) throws BrokenBarrierException, InterruptedException {
+            private void testLockBusyReaderRollTheDice(RefreshOnAcquireReaderPool pool, TableToken nameX) throws BrokenBarrierException, InterruptedException {
                 final CyclicBarrier start = new CyclicBarrier(2);
                 final SOCountDownLatch halt = new SOCountDownLatch(1);
                 final AtomicReference<TableReader> ref = new AtomicReference<>();
@@ -1335,13 +1335,13 @@ public class ReaderPoolTest extends AbstractCairoTest {
 
     private void assertWithPool(PoolAwareCode code, final CairoConfiguration configuration) throws Exception {
         assertMemoryLeak(() -> {
-            try (ReaderPool pool = new ReaderPool(configuration, engine.getTxnScoreboardPool(), messageBus)) {
+            try (RefreshOnAcquireReaderPool pool = new RefreshOnAcquireReaderPool(configuration, engine.getTxnScoreboardPool(), messageBus)) {
                 code.run(pool);
             }
         });
     }
 
     private interface PoolAwareCode {
-        void run(ReaderPool pool) throws Exception;
+        void run(RefreshOnAcquireReaderPool pool) throws Exception;
     }
 }

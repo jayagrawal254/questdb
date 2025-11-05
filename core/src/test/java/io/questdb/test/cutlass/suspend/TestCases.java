@@ -26,7 +26,7 @@ package io.questdb.test.cutlass.suspend;
 
 import io.questdb.cairo.DataUnavailableException;
 import io.questdb.cairo.TableToken;
-import io.questdb.cairo.pool.ReaderPool;
+import io.questdb.cairo.pool.RefreshOnAcquireReaderPool;
 import io.questdb.network.DefaultIODispatcherConfiguration;
 import io.questdb.network.SuspendEvent;
 import io.questdb.network.SuspendEventFactory;
@@ -367,7 +367,7 @@ public class TestCases {
         return testCases.getQuick(i);
     }
 
-    public ReaderPool.ReaderListener getSuspendingListener() {
+    public RefreshOnAcquireReaderPool.ReaderListener getSuspendingListener() {
         suspendingListener.clear();
         return suspendingListener;
     }
@@ -393,7 +393,7 @@ public class TestCases {
      * This listener varies DataUnavailableException and successful execution of TableReader#openPartition()
      * in the following sequence: exception, success, exception, success, etc.
      */
-    private static class SuspendingReaderListener implements ReaderPool.ReaderListener, Mutable {
+    private static class SuspendingReaderListener implements RefreshOnAcquireReaderPool.ReaderListener, Mutable {
 
         private final ConcurrentHashMap<SuspendEvent> suspendedPartitions = new ConcurrentHashMap<>();
 

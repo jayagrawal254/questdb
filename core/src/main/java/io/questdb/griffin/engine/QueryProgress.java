@@ -32,7 +32,7 @@ import io.questdb.cairo.DataUnavailableException;
 import io.questdb.cairo.SqlJitMode;
 import io.questdb.cairo.TableReader;
 import io.questdb.cairo.TableToken;
-import io.questdb.cairo.pool.ReaderPool;
+import io.questdb.cairo.pool.RefreshOnAcquireReaderPool;
 import io.questdb.cairo.pool.ResourcePoolSupervisor;
 import io.questdb.cairo.sql.PageFrameCursor;
 import io.questdb.cairo.sql.Record;
@@ -59,7 +59,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 // Factory that adds query to registry on getCursor() and removes on cursor close().
-public class QueryProgress extends AbstractRecordCursorFactory implements ResourcePoolSupervisor<ReaderPool.R> {
+public class QueryProgress extends AbstractRecordCursorFactory implements ResourcePoolSupervisor<RefreshOnAcquireReaderPool.R> {
     @SuppressWarnings("FieldMayBeFinal")
     private static Log LOG = LogFactory.getLog(QueryProgress.class);
     private final RecordCursorFactory base;
@@ -322,13 +322,13 @@ public class QueryProgress extends AbstractRecordCursorFactory implements Resour
     }
 
     @Override
-    public void onResourceBorrowed(ReaderPool.R resource) {
+    public void onResourceBorrowed(RefreshOnAcquireReaderPool.R resource) {
         assert resource.getSupervisor() != null;
         readers.add(resource);
     }
 
     @Override
-    public void onResourceReturned(ReaderPool.R resource) {
+    public void onResourceReturned(RefreshOnAcquireReaderPool.R resource) {
         int index = readers.remove(resource);
         // do not freak out if reader is not in the list after our cursor has been closed
         if (index < 0 && cursor.isOpen) {

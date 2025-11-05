@@ -501,6 +501,7 @@ public class PropServerConfiguration implements ServerConfiguration {
     private final TextConfiguration textConfiguration = new PropTextConfiguration();
     private final int textLexerStringPoolCapacity;
     private final int timestampAdapterPoolCapacity;
+    private final boolean useAutoRefreshingReaderPool;
     private final boolean useLegacyStringDefault;
     private final int utf8SinkSize;
     private final PropertyValidator validator;
@@ -1286,6 +1287,7 @@ public class PropServerConfiguration implements ServerConfiguration {
             this.httpExportTimeout = getMillis(properties, env, PropertyKey.HTTP_EXPORT_TIMEOUT, Math.max(queryTimeout, 300_000));
 
             this.queryWithinLatestByOptimisationEnabled = getBoolean(properties, env, PropertyKey.QUERY_WITHIN_LATEST_BY_OPTIMISATION_ENABLED, false);
+            this.useAutoRefreshingReaderPool = getBoolean(properties, env, PropertyKey.CAIRO_READER_POOL_AUTO_REFRESH_ENABLED, false);
             this.netTestConnectionBufferSize = getInt(properties, env, PropertyKey.CIRCUIT_BREAKER_BUFFER_SIZE, 64);
             this.netTestConnectionBufferSize = getInt(properties, env, PropertyKey.NET_TEST_CONNECTION_BUFFER_SIZE, netTestConnectionBufferSize);
 
@@ -4333,6 +4335,11 @@ public class PropServerConfiguration implements ServerConfiguration {
         @Override
         public int maxArrayElementCount() {
             return sqlMaxArrayElementCount;
+        }
+
+        @Override
+        public boolean useAutoRefreshingReaderPool() {
+            return false;
         }
 
         @Override

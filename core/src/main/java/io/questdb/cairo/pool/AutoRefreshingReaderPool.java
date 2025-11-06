@@ -220,6 +220,7 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ReaderPool
                         if (Unsafe.cas(e.allocations, i, UNALLOCATED, thread)) {
                             try {
                                 // todo: handle errors
+                                e.refreshTimes[i] = clock.getTicks();
                                 r.refresh(null);
                             } finally {
                                 Unsafe.arrayPutOrdered(e.allocations, i, UNALLOCATED);
@@ -313,9 +314,15 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ReaderPool
                                     .$("open [table=").$(tableToken)
                                     .$(", at=").$(e.index).$(':').$(i)
                                     .I$();
-                            tenant = copyOfTenant != null
-                                    ? newCopyOfTenant(copyOfTenant, e, i, supervisor)
-                                    : newTenant(tableToken, e, i, supervisor);
+                            long refreshTime;
+                            if (copyOfTenant == null) {
+                                refreshTime = clock.getTicks();
+                                tenant = newTenant(tableToken, e, i, supervisor);
+                            } else {
+                                refreshTime = -1; // -1 means not a recent transaction
+                                tenant = newCopyOfTenant(copyOfTenant, e, i, supervisor);
+                            }
+                            e.refreshTimes[i] = refreshTime;
                         } catch (CairoException ex) {
                             Unsafe.arrayPutOrdered(e.allocations, i, UNALLOCATED);
                             throw ex;
@@ -326,11 +333,14 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ReaderPool
                     } else {
                         try {
                             if (copyOfTenant != null) {
-                                // when a caller is asking for specific txn we force refresh
+                                // when a caller is asking for specific txn we force refresh to the txn
+                                // we also have to invalidate refresh time property
+                                e.refreshTimes[i] = -1;
                                 tenant.refreshAt(supervisor, copyOfTenant);
                             } else if (!tenant.isActive()) {
                                 // edge-case: readers can be in a pool without being pinned to a transaction.
                                 // this can happen after an exception
+                                e.refreshTimes[i] = clock.getTicks();
                                 tenant.refresh(supervisor);
                             }
                             // the most common case: a caller did not ask for a specific transaction
@@ -535,6 +545,7 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ReaderPool
     public static final class Entry {
         private final long[] allocations = new long[ENTRY_SIZE];
         private final int index;
+        private final long[] refreshTimes = new long[ENTRY_SIZE]; // we use wall-clock times instead of txn to provide bounded latency
         private final long[] releaseOrAcquireTimes = new long[ENTRY_SIZE];
         private final R[] tenants = new R[ENTRY_SIZE];
         int nextStatus = NEXT_OPEN;

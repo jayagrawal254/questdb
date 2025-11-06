@@ -219,9 +219,13 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ReaderPool
                     if ((r = e.getTenant(i)) != null) {
                         if (Unsafe.cas(e.allocations, i, UNALLOCATED, thread)) {
                             try {
-                                // todo: handle errors
                                 e.refreshTimes[i] = clock.getTicks();
                                 r.refresh(null);
+                            } catch (Throwable t) {
+                                LOG.error().$("failed to refresh [table=").$(r.getTableToken()).$(']').$(t.getMessage()).$();
+                                r.goodbye();
+                                r.close();
+                                e.assignTenant(i, null);
                             } finally {
                                 Unsafe.arrayPutOrdered(e.allocations, i, UNALLOCATED);
                             }

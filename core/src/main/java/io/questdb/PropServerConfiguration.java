@@ -4339,7 +4339,7 @@ public class PropServerConfiguration implements ServerConfiguration {
 
         @Override
         public boolean useAutoRefreshingReaderPool() {
-            return false;
+            return useAutoRefreshingReaderPool;
         }
 
         @Override

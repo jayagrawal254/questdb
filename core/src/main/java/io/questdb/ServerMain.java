@@ -47,7 +47,9 @@ import io.questdb.mp.SynchronizedJob;
 import io.questdb.mp.WorkerPool;
 import io.questdb.mp.WorkerPoolUtils;
 import io.questdb.std.Chars;
+import io.questdb.std.Files;
 import io.questdb.std.Misc;
+import io.questdb.std.MmapCache;
 import io.questdb.std.datetime.Clock;
 import io.questdb.std.filewatch.FileWatcher;
 import org.jetbrains.annotations.NotNull;
@@ -298,6 +300,11 @@ public class ServerMain implements Closeable {
                         EngineRefreshReadersJob refreshReadersJob = new EngineRefreshReadersJob(engine);
                         sharedPoolQuery.assign(refreshReadersJob);
                     }
+                    if (cairoConfig.getAsyncMunmapEnabled()) {
+                        AsyncMunmapJob asyncMunmapJob = new AsyncMunmapJob();
+                        // todo: shared pool might be too busy? consider a different pool
+                        sharedPoolQuery.assign(asyncMunmapJob);
+                    }
 
                     WorkerPoolUtils.setupQueryJobs(sharedPoolQuery, engine);
 
@@ -497,6 +504,20 @@ public class ServerMain implements Closeable {
 
     protected String webConsoleSchema() {
         return "http";
+    }
+
+    public static final class AsyncMunmapJob extends SynchronizedJob {
+
+        private final MmapCache cache;
+
+        public AsyncMunmapJob() {
+            this.cache = Files.getMmapCache();
+        }
+
+        @Override
+        protected boolean runSerially() {
+            return cache.asyncMunmap();
+        }
     }
 
     public static class EngineMaintenanceJob extends SynchronizedJob {

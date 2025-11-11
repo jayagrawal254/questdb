@@ -212,15 +212,24 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ReaderPool
     public void refreshAllUnallocatedReaders() {
         // todo: start with the most stale reader
         long thread = Thread.currentThread().getId();
+        int refreshed = 0;
+        int skipped = 0;
+        long startMicros = clock.getTicks();
         for (AutoRefreshingReaderPool.Entry e : entries.values()) {
             do {
                 for (int i = 0; i < ENTRY_SIZE; i++) {
                     R r;
                     if ((r = e.getTenant(i)) != null) {
                         if (Unsafe.cas(e.allocations, i, UNALLOCATED, thread)) {
+                            refreshed++;
                             try {
-                                e.refreshTimes[i] = clock.getTicks();
+                                long beforeReaderRefresh = clock.getTicks();
+                                e.refreshTimes[i] = beforeReaderRefresh;
                                 r.refresh(null);
+                                long readerRefreshDelta = clock.getTicks() - beforeReaderRefresh;
+                                if (readerRefreshDelta > 50_000) {
+                                    LOG.debug().$("Slow TableReader refresh [micros=").$(readerRefreshDelta).$(']').$();
+                                }
                             } catch (Throwable t) {
                                 LOG.error().$("failed to refresh [table=").$(r.getTableToken()).$(']').$(t.getMessage()).$();
                                 r.goodbye();
@@ -229,11 +238,18 @@ public class AutoRefreshingReaderPool extends AbstractPool implements ReaderPool
                             } finally {
                                 Unsafe.arrayPutOrdered(e.allocations, i, UNALLOCATED);
                             }
+                        } else {
+                            skipped++;
                         }
                     }
                 }
                 e = e.next;
             } while (e != null);
+        }
+        long endMicros = clock.getTicks();
+        long micros = endMicros - startMicros;
+        if (micros > 100_000) {
+            LOG.debug().$("Slow TableReaders refreshed [entries=").$(refreshed).$(", skipped=").$(skipped).$(", micros=").$(micros).$(']').$();
         }
     }
 

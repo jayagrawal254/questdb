@@ -77,7 +77,7 @@ public final class NativeAsyncMunmapProducer {
 
                 // invariant: slots available for writing must have addr set to 0
                 // the consumer is responsible for zeroing the addr after using it
-                assert U.getLongVolatile(null, slotPtr) == 0;
+                assert U.getLong(null, slotPtr) == 0;
 
                 // important: write len first and only THEN the address
                 U.putLong(slotPtr + 8, len);

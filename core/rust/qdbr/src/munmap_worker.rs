@@ -130,7 +130,7 @@ fn munmap_worker_thread() {
 
             unsafe {
                 if libc::munmap(addr as *mut libc::c_void, len as libc::size_t) != 0 {
-                    let errno = *libc::__errno_location();
+                    let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(-1);
                     eprintln!("[munmap_worker] munmap failed: addr={:#x}, len={}, errno={}",
                               addr, len, errno);
                 }

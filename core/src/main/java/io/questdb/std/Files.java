@@ -66,6 +66,12 @@ public final class Files {
     public static final int TMPFS_MAGIC = 0x01021994;
     public static final Charset UTF_8;
     public static final int WINDOWS_ERROR_FILE_EXISTS = 0x50;
+    private static final int RING_BUFFER_HEAD_OFFSET = 0;
+    private static final int RING_BUFFER_TAIL_OFFSET = 8;
+    private static final int RING_BUFFER_CAPACITY_OFFSET = 16;
+    private static final int RING_BUFFER_MASK_OFFSET = 24;
+    private static final int RING_BUFFER_SLOTS_OFFSET = 64;
+    private static final int RING_BUFFER_SLOT_SIZE = 16; // addr (8) + len (8)
     private static final int VIRTIO_FS_MAGIC = 0x6a656a63;
     private final static FdCache fdCache = new FdCache();
     private static final MmapCache mmapCache = new MmapCache();
@@ -73,6 +79,16 @@ public final class Files {
     public static boolean FS_CACHE_ENABLED = true;
     // To be set in tests to check every call for using OPEN file descriptor
     public static boolean VIRTIO_FS_DETECTED = false;
+    // Native munmap ring buffer (allocated in Rust, accessed via Unsafe)
+    // Ring buffer memory layout:
+    //   Offset 0:  head (atomic u64)
+    //   Offset 8:  tail (atomic u64)
+    //   Offset 16: capacity (u64)
+    //   Offset 24: mask (u64)
+    //   Offset 64: slots[] - array of {addr: u64, len: u64}
+    private static long MUNMAP_RING_BUFFER_PTR = 0;
+    private static long MUNMAP_RING_BUFFER_CAPACITY = 0;
+    private static long MUNMAP_RING_BUFFER_MASK = 0;
 
     private Files() {
         // Prevent construction.
@@ -708,11 +724,63 @@ public final class Files {
 
     native static int close0(int fd);
 
+    static native long initMunmapWorker();
+
     static native long mmap0(int fd, long len, long offset, int flags, long baseAddress);
 
     static native long mremap0(int fd, long address, long previousSize, long newSize, long offset, int flags);
 
     static native int munmap0(long address, long len);
+
+    /**
+     * Enqueues a munmap request to the native ring buffer using Unsafe.
+     * Returns true if successfully enqueued, false if queue is full.
+     * <p>
+     * Lock-free MPSC algorithm:
+     * 1. CAS on head to claim a slot
+     * 2. Write addr/len to the slot
+     * 3. Memory fence to publish
+     */
+    static boolean munmapEnqueueNative(long address, long len) {
+        if (MUNMAP_RING_BUFFER_PTR == 0) {
+            return false; // Worker not initialized
+        }
+
+        final sun.misc.Unsafe U = Unsafe.getUnsafe();
+        final long ringPtr = MUNMAP_RING_BUFFER_PTR;
+        final long capacity = MUNMAP_RING_BUFFER_CAPACITY;
+        final long mask = MUNMAP_RING_BUFFER_MASK;
+
+        // Try to claim a slot via CAS on head
+        while (true) {
+            long head = U.getLongVolatile(null, ringPtr + RING_BUFFER_HEAD_OFFSET);
+            long tail = U.getLongVolatile(null, ringPtr + RING_BUFFER_TAIL_OFFSET);
+
+            // Check if queue is full (head - tail == capacity)
+            if (head - tail >= capacity) {
+                return false; // Queue full
+            }
+
+            // Try to claim this slot via CAS
+            if (U.compareAndSwapLong(null, ringPtr + RING_BUFFER_HEAD_OFFSET, head, head + 1)) {
+                // Successfully claimed slot at index 'head'
+                long slotIndex = head & mask;
+                long slotPtr = ringPtr + RING_BUFFER_SLOTS_OFFSET + (slotIndex * RING_BUFFER_SLOT_SIZE);
+
+                // Write len first (consumer won't read until addr != 0)
+                U.putLong(slotPtr + 8, len);
+
+                // Write addr LAST with volatile store (Release semantics)
+                // This signals to consumer that data is ready (addr != 0)
+                // and ensures len write is visible before addr write
+                U.putLongVolatile(null, slotPtr, address);
+
+                return true;
+            }
+            // CAS failed, retry (another thread claimed this slot)
+            Os.pause();
+        }
+    }
 
     native static int openRO(long lpszName);
 
@@ -736,5 +804,21 @@ public final class Files {
             POSIX_MADV_SEQUENTIAL = -1;
             POSIX_MADV_RANDOM = -1;
         }
+
+        // Initialize native munmap worker thread if async munmap is enabled
+//        if (ASYNC_MUNMAP_ENABLED) {
+        MUNMAP_RING_BUFFER_PTR = initMunmapWorker();
+        if (MUNMAP_RING_BUFFER_PTR == 0) {
+            throw new RuntimeException("Failed to initialize munmap worker thread");
+        }
+
+        // Read capacity and mask from the native ring buffer header
+        final sun.misc.Unsafe U = Unsafe.getUnsafe();
+        MUNMAP_RING_BUFFER_CAPACITY = U.getLong(MUNMAP_RING_BUFFER_PTR + RING_BUFFER_CAPACITY_OFFSET);
+        MUNMAP_RING_BUFFER_MASK = U.getLong(MUNMAP_RING_BUFFER_PTR + RING_BUFFER_MASK_OFFSET);
+
+        System.out.println("[Files] Native munmap worker initialized: ptr=" + Long.toHexString(MUNMAP_RING_BUFFER_PTR) +
+                          ", capacity=" + MUNMAP_RING_BUFFER_CAPACITY + ", mask=" + Long.toHexString(MUNMAP_RING_BUFFER_MASK));
+//        }
     }
 }

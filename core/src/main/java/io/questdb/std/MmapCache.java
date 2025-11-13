@@ -343,6 +343,7 @@ public class MmapCache {
                     .$(", errno=").$(errno)
                     .I$();
         }
+        Thread.yield();
     }
 
     private MmapCacheRecord createMmapCacheRecord(int fd, long fileCacheKey, long len, long address, int memoryTag) {
@@ -356,22 +357,11 @@ public class MmapCache {
 
     private void unmap0(long address, long len, int memoryTag) {
         if (Files.ASYNC_MUNMAP_ENABLED) {
-            // sequence returning -2 -> we lost a CAS race. we do a cheap retry
-            // sequence returning -1 -> the queue is full. then it's cheaper to do the munmap ourserlves
-            long seq;
-            while ((seq = munmapProducesSequence.next()) == -2) {
-                Os.pause();
-            }
-
-            if (seq > -1) {
-                MunmapTask task = munmapTaskRingQueue.get(seq);
-                task.address = address;
-                task.size = len;
-                task.memoryTag = memoryTag;
-                munmapProducesSequence.done(seq);
+            if (Files.munmapEnqueueNative(address, len)) {
+                Unsafe.recordMemAlloc(-len, memoryTag);
                 return;
             } else {
-                LOG.info().$("async munmap queue is full").$();
+                LOG.info().$("native munmap queue is full, falling back to sync munmap").$();
             }
         }
         int result = Files.munmap0(address, len);

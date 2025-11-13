@@ -29,6 +29,7 @@ pub extern crate jni;
 mod allocator;
 mod cairo;
 mod files;
+mod munmap_worker;
 mod parquet;
 mod parquet_read;
 mod parquet_write;
@@ -82,4 +83,21 @@ pub extern "system" fn Java_io_questdb_std_Os_isRustReleaseBuild(
     _class: JClass,
 ) -> bool {
     !cfg!(debug_assertions)
+}
+
+/// Initializes the munmap worker thread and returns pointer to ring buffer
+/// Returns: pointer to native ring buffer (as jlong), or 0 on failure
+#[no_mangle]
+pub extern "system" fn Java_io_questdb_std_Files_initMunmapWorker(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jlong {
+    let ring_ptr = munmap_worker::get_ring_buffer_ptr();
+
+    if ring_ptr.is_null() {
+        eprintln!("[initMunmapWorker] Failed to initialize munmap worker");
+        return 0;
+    }
+
+    ring_ptr as jlong
 }

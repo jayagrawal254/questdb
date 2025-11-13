@@ -132,11 +132,6 @@ public class DefaultCairoConfiguration implements CairoConfiguration {
     }
 
     @Override
-    public boolean getAsyncMunmapEnabled() {
-        return false;
-    }
-
-    @Override
     public @NotNull String getAttachPartitionSuffix() {
         return TableUtils.ATTACHABLE_DIR_MARKER;
     }
@@ -587,6 +582,11 @@ public class DefaultCairoConfiguration implements CairoConfiguration {
     @Override
     public int getMkDirMode() {
         return 509;
+    }
+
+    @Override
+    public int getMunmapMode() {
+        return Files.MUNMAP_MODE_SYNC;
     }
 
     @Override

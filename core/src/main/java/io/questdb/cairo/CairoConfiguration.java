@@ -126,8 +126,6 @@ public interface CairoConfiguration {
         return "crash+";
     }
 
-    boolean getAsyncMunmapEnabled();
-
     @NotNull
     String getAttachPartitionSuffix();
 
@@ -357,6 +355,8 @@ public interface CairoConfiguration {
 
     int getMkDirMode();
 
+    int getMunmapMode();
+
     default NanosecondClock getNanosecondClock() {
         return NanosecondClockImpl.INSTANCE;
     }
@@ -413,19 +413,19 @@ public interface CairoConfiguration {
 
     int getParallelIndexThreshold();
 
-    int getParquetExportCopyReportFrequencyLines();
-
     int getParquetExportCompressionCodec();
 
     int getParquetExportCompressionLevel();
+
+    int getParquetExportCopyReportFrequencyLines();
 
     int getParquetExportDataPageSize();
 
     int getParquetExportRowGroupSize();
 
-    int getParquetExportVersion();
-
     CharSequence getParquetExportTableNamePrefix();
+
+    int getParquetExportVersion();
 
     int getPartitionEncoderParquetCompressionCodec();
 

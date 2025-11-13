@@ -211,7 +211,7 @@ public class Bootstrap {
             }
 
             Files.FS_CACHE_ENABLED = config.getCairoConfiguration().getFileDescriptorCacheEnabled();
-            Files.ASYNC_MUNMAP_ENABLED = config.getCairoConfiguration().getAsyncMunmapEnabled();
+            Files.MUNMAP_MODE = config.getCairoConfiguration().getMunmapMode();
             LogLevel.init(config.getCairoConfiguration());
             if (LogLevel.TIMESTAMP_TIMEZONE != null) {
                 log.infoW().$("changing logger timezone [from=`UTC`, to=`").$(LogLevel.TIMESTAMP_TIMEZONE).$('`').I$();

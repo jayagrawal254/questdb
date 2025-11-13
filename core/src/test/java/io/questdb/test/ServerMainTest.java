@@ -67,7 +67,7 @@ public class ServerMainTest extends AbstractBootstrapTest {
     public void testAsyncMunmap() throws Exception {
         assertMemoryLeak(() -> {
             Map<String, String> env = new HashMap<>(System.getenv());
-            env.put(PropertyKey.CAIRO_FILE_ASYNC_MUNMAP_ENABLED.getEnvVarName(), "true");
+            env.put(PropertyKey.CAIRO_FILE_MUNMAP_MODE.getEnvVarName(), "true");
             Bootstrap bootstrap = new Bootstrap(
                     new DefaultBootstrapConfiguration() {
                         @Override

@@ -356,14 +356,34 @@ public class MmapCache {
     }
 
     private void unmap0(long address, long len, int memoryTag) {
-        if (Files.ASYNC_MUNMAP_ENABLED) {
-            if (Files.munmapEnqueueNative(address, len)) {
-                Unsafe.recordMemAlloc(-len, memoryTag);
-                return;
-            } else {
+
+        switch (Files.MUNMAP_MODE) {
+            case Files.MUNMAP_MODE_ASYNC_NATIVE:
+                if (NativeAsyncMunmapProducer.munmapEnqueueNative(address, len)) {
+                    Unsafe.recordMemAlloc(-len, memoryTag);
+                    return;
+                }
                 LOG.info().$("native munmap queue is full, falling back to sync munmap").$();
-            }
+                break;
+            case Files.MUNMAP_MODE_ASYNC_JAVA:
+                long seq;
+                while ((seq = munmapProducesSequence.next()) == -2) {
+                    Os.pause();
+                }
+                if (seq > -1) {
+                    MunmapTask task = munmapTaskRingQueue.get(seq);
+                    task.address = address;
+                    task.size = len;
+                    task.memoryTag = memoryTag;
+                    munmapProducesSequence.done(seq);
+                    return;
+                }
+                LOG.info().$("async munmap queue is full, falling back to sync munmap").$();
+                break;
+            default:
+                // fall-through
         }
+
         int result = Files.munmap0(address, len);
         if (result != -1) {
             Unsafe.recordMemAlloc(-len, memoryTag);

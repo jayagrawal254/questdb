@@ -23,7 +23,6 @@
  ******************************************************************************/
 
 use once_cell::sync::Lazy;
-use std::mem::size_of;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::Duration;
@@ -75,8 +74,6 @@ pub struct RingBuffer {
 
 /// Global ring buffer, lazily initialized on first access
 static RING_BUFFER: Lazy<RingBuffer> = Lazy::new(|| {
-    let total_size = size_of::<RingBuffer>();
-
     RingBuffer {
         header: RingBufferHeader {
             head: AtomicU64::new(0),

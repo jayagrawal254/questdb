@@ -146,7 +146,6 @@ public class PropServerConfiguration implements ServerConfiguration {
     private final String acceptingWrites;
     private final ObjObjHashMap<ConfigPropertyKey, ConfigPropertyValue> allPairs = new ObjObjHashMap<>();
     private final boolean allowTableRegistrySharedWrite;
-    private final boolean asyncMunmapEnabled;
     private final DateFormat backupDirTimestampFormat;
     private final int backupMkdirMode;
     private final String backupRoot;
@@ -341,6 +340,7 @@ public class PropServerConfiguration implements ServerConfiguration {
     private final boolean metricsEnabled;
     private final MicrosecondClock microsecondClock;
     private final int mkdirMode;
+    private final int munmapMode;
     private final int o3CallbackQueueCapacity;
     private final int o3ColumnMemorySize;
     private final int o3CopyQueueCapacity;
@@ -1527,7 +1527,24 @@ public class PropServerConfiguration implements ServerConfiguration {
 
             this.writerMixedIOEnabled = getBoolean(properties, env, PropertyKey.DEBUG_CAIRO_ALLOW_MIXED_IO, ff.allowMixedIO(this.dbRoot));
             this.fileDescriptorCacheEnabled = getBoolean(properties, env, PropertyKey.CAIRO_FILE_DESCRIPTOR_CACHE_ENABLED, true);
-            this.asyncMunmapEnabled = getBoolean(properties, env, PropertyKey.CAIRO_FILE_ASYNC_MUNMAP_ENABLED, false);
+            String munmapName = getString(properties, env, PropertyKey.CAIRO_FILE_MUNMAP_MODE, "sync");
+            switch (munmapName) {
+                case "sync":
+                    this.munmapMode = Files.MUNMAP_MODE_SYNC;
+                    break;
+                case "async":
+                    this.munmapMode = Files.MUNMAP_MODE_ASYNC_JAVA;
+                    break;
+                case "native":
+                    if (!Os.isPosix()) {
+                        throw new ServerConfigurationException("native munmap mode is not supported on this platform [mode=native, platform=" + Os.archName + "]");
+                    }
+                    this.munmapMode = Files.MUNMAP_MODE_ASYNC_NATIVE;
+                    break;
+                default:
+                    throw new ServerConfigurationException("Invalid value for " + PropertyKey.CAIRO_FILE_MUNMAP_MODE.getPropertyPath() + ": " + munmapName
+                            + ", valid modes: [sync, async, native]");
+            }
 
             this.inputFormatConfiguration = new InputFormatConfiguration(
                     DateFormatFactory.INSTANCE,
@@ -2980,11 +2997,6 @@ public class PropServerConfiguration implements ServerConfiguration {
         }
 
         @Override
-        public boolean getAsyncMunmapEnabled() {
-            return asyncMunmapEnabled;
-        }
-
-        @Override
         public @NotNull String getAttachPartitionSuffix() {
             return cairoAttachPartitionSuffix;
         }
@@ -3440,6 +3452,11 @@ public class PropServerConfiguration implements ServerConfiguration {
         @Override
         public int getMkDirMode() {
             return mkdirMode;
+        }
+
+        @Override
+        public int getMunmapMode() {
+            return munmapMode;
         }
 
         @Override

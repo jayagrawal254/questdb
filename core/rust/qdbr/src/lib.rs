@@ -88,7 +88,7 @@ pub extern "system" fn Java_io_questdb_std_Os_isRustReleaseBuild(
 /// Initializes the munmap worker thread and returns pointer to ring buffer
 /// Returns: pointer to native ring buffer (as jlong), or 0 on failure
 #[no_mangle]
-pub extern "system" fn Java_io_questdb_std_Files_initMunmapWorker(
+pub extern "system" fn Java_io_questdb_std_NativeAsyncMunmapProducer_initMunmapWorker(
     _env: JNIEnv,
     _class: JClass,
 ) -> jlong {

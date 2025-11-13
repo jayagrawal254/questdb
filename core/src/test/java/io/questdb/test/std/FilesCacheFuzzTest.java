@@ -28,6 +28,7 @@ import io.questdb.ParanoiaState;
 import io.questdb.std.Files;
 import io.questdb.std.MemoryTag;
 import io.questdb.std.Misc;
+import io.questdb.std.Os;
 import io.questdb.std.Rnd;
 import io.questdb.std.Unsafe;
 import io.questdb.std.str.Path;
@@ -65,18 +66,25 @@ public class FilesCacheFuzzTest extends AbstractTest {
     private Rnd rndRoot;
     private Path[] testFilePaths;
 
-    public FilesCacheFuzzTest(boolean fdCacheEnabled, boolean asyncMunmapEnabled) {
+    public FilesCacheFuzzTest(boolean fdCacheEnabled, int munmapMode) {
         Files.FS_CACHE_ENABLED = fdCacheEnabled;
-        Files.ASYNC_MUNMAP_ENABLED = asyncMunmapEnabled;
+        Files.MUNMAP_MODE = munmapMode;
     }
 
-    @Parameterized.Parameters(name = "fd_cache_enabled_{0}, async_munmap_{1}")
+    @Parameterized.Parameters(name = "fd_cache_enabled_{0}, munmap_mode_{1}")
     public static Collection<Object[]> data() {
-        return Arrays.asList(new Object[][]{
-                {true, true},
-                {true, false},
-                {false, true},
-                {false, false}
+        return Os.isPosix() ? Arrays.asList(new Object[][]{
+                {true, Files.MUNMAP_MODE_SYNC},
+                {true, Files.MUNMAP_MODE_ASYNC_JAVA},
+                {true, Files.MUNMAP_MODE_ASYNC_NATIVE},
+                {false, Files.MUNMAP_MODE_SYNC},
+                {false, Files.MUNMAP_MODE_ASYNC_JAVA},
+                {false, Files.MUNMAP_MODE_ASYNC_NATIVE}
+        }) : Arrays.asList(new Object[][]{
+                {true, Files.MUNMAP_MODE_SYNC},
+                {true, Files.MUNMAP_MODE_ASYNC_JAVA},
+                {false, Files.MUNMAP_MODE_SYNC},
+                {false, Files.MUNMAP_MODE_ASYNC_JAVA},
         });
     }
 
@@ -91,7 +99,7 @@ public class FilesCacheFuzzTest extends AbstractTest {
     public static void tearDownStatic() {
         AbstractTest.tearDownStatic();
         ParanoiaState.FD_PARANOIA_MODE = savedFdParanoia;
-        Files.ASYNC_MUNMAP_ENABLED = false;
+        Files.MUNMAP_MODE = Files.MUNMAP_MODE_SYNC;
     }
 
     @Before

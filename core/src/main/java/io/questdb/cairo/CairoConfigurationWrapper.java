@@ -102,11 +102,6 @@ public class CairoConfigurationWrapper implements CairoConfiguration {
     }
 
     @Override
-    public boolean getAsyncMunmapEnabled() {
-        return getDelegate().getAsyncMunmapEnabled();
-    }
-
-    @Override
     public @NotNull String getAttachPartitionSuffix() {
         return getDelegate().getAttachPartitionSuffix();
     }
@@ -567,6 +562,11 @@ public class CairoConfigurationWrapper implements CairoConfiguration {
     }
 
     @Override
+    public int getMunmapMode() {
+        return getDelegate().getMunmapMode();
+    }
+
+    @Override
     public int getO3CallbackQueueCapacity() {
         return getDelegate().getO3CallbackQueueCapacity();
     }
@@ -647,11 +647,6 @@ public class CairoConfigurationWrapper implements CairoConfiguration {
     }
 
     @Override
-    public int getParquetExportCopyReportFrequencyLines() {
-        return getDelegate().getParquetExportCopyReportFrequencyLines();
-    }
-
-    @Override
     public int getParquetExportCompressionCodec() {
         return getDelegate().getParquetExportCompressionCodec();
     }
@@ -659,6 +654,11 @@ public class CairoConfigurationWrapper implements CairoConfiguration {
     @Override
     public int getParquetExportCompressionLevel() {
         return getDelegate().getParquetExportCompressionLevel();
+    }
+
+    @Override
+    public int getParquetExportCopyReportFrequencyLines() {
+        return getDelegate().getParquetExportCopyReportFrequencyLines();
     }
 
     @Override
@@ -672,13 +672,13 @@ public class CairoConfigurationWrapper implements CairoConfiguration {
     }
 
     @Override
-    public int getParquetExportVersion() {
-        return getDelegate().getParquetExportVersion();
+    public CharSequence getParquetExportTableNamePrefix() {
+        return getDelegate().getParquetExportTableNamePrefix();
     }
 
     @Override
-    public CharSequence getParquetExportTableNamePrefix() {
-        return getDelegate().getParquetExportTableNamePrefix();
+    public int getParquetExportVersion() {
+        return getDelegate().getParquetExportVersion();
     }
 
     @Override

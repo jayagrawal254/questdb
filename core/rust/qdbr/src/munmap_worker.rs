@@ -113,6 +113,7 @@ fn munmap_worker_thread() {
 
             // addr == 0 is our sentinel value meaning "slot not ready or already consumed"
             let addr = loop {
+                // note: Java producer uses volatile store for address = it has a Release semantics
                 let a = slot.addr.load(Ordering::Acquire);
                 if a != 0 {
                     break a;
@@ -121,11 +122,12 @@ fn munmap_worker_thread() {
             };
 
             // Read len (safe now, producer finished writing)
+            // Note: Java producer writes 'len' before address and address established happens-before edge
             let len = slot.len;
 
             // Mark slot as consumed by writing sentinel BEFORE we bump tail
             // Ordering::Relaxed is sufficient since producer will NOT access it before we set
-            // bump tail with RELEASE semantics
+            // bump tail with Release semantics
             slot.addr.store(0, Ordering::Relaxed);
 
             unsafe {

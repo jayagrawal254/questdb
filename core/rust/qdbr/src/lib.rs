@@ -29,6 +29,7 @@ pub extern crate jni;
 mod allocator;
 mod cairo;
 mod files;
+#[cfg(unix)]
 mod munmap_worker;
 mod parquet;
 mod parquet_read;
@@ -86,7 +87,8 @@ pub extern "system" fn Java_io_questdb_std_Os_isRustReleaseBuild(
 }
 
 /// Initializes the munmap worker thread and returns pointer to ring buffer
-/// Returns: pointer to native ring buffer (as jlong), or 0 on failure
+/// Returns: pointer to native ring buffer (as jlong), or 0 on failure/Windows
+#[cfg(unix)]
 #[no_mangle]
 pub extern "system" fn Java_io_questdb_std_NativeAsyncMunmapProducer_initMunmapWorker(
     _env: JNIEnv,
@@ -100,4 +102,14 @@ pub extern "system" fn Java_io_questdb_std_NativeAsyncMunmapProducer_initMunmapW
     }
 
     ring_ptr as jlong
+}
+
+/// Windows stub - returns 0 (native async munmap not supported on Windows)
+#[cfg(not(unix))]
+#[no_mangle]
+pub extern "system" fn Java_io_questdb_std_NativeAsyncMunmapProducer_initMunmapWorker(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jlong {
+    0
 }

@@ -48,6 +48,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -720,6 +721,7 @@ public class MatViewFuzzTest extends AbstractFuzzTest {
 
         // Can help to reduce memory consumption.
         engine.releaseInactive();
+        Os.sleep(ThreadLocalRandom.current().nextInt(100));
         fuzzer.applyManyWalParallel(fuzzTransactions, rnd, testTableName, true, true);
 
         stop.set(true);

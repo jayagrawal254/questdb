@@ -67,6 +67,8 @@ import io.questdb.std.str.StringSink;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.concurrent.ThreadLocalRandom;
+
 import static io.questdb.cairo.wal.WalUtils.WAL_DEDUP_MODE_REPLACE_RANGE;
 
 public class MatViewRefreshJob implements Job, QuietCloseable {
@@ -734,6 +736,7 @@ public class MatViewRefreshJob implements Job, QuietCloseable {
                         replacementTimestampHi = intervalIterator.getTimestampHi();
 
                         try (RecordCursor cursor = factory.getCursor(refreshSqlExecutionContext)) {
+                            Os.sleep(ThreadLocalRandom.current().nextInt(100));
                             final Record record = cursor.getRecord();
                             final TimestampDriver driver = ColumnType.getTimestampDriver(timestampType);
                             long insertedRows = 0;
@@ -1051,6 +1054,7 @@ public class MatViewRefreshJob implements Job, QuietCloseable {
                             rangeFrom,
                             rangeTo
                     );
+                    Os.sleep(ThreadLocalRandom.current().nextInt(100));
                     insertAsSelect(viewDefinition, viewState, walWriter, refreshContext, refreshTriggerTimestamp);
                 } finally {
                     refreshSqlExecutionContext.clearReader();

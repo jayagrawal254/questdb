@@ -761,7 +761,7 @@ public class MatViewFuzzTest extends AbstractFuzzTest {
                     );
                 } catch (Throwable th) {
                     StringSink sink = new StringSink();
-                    TestUtils.printSql(engine, sqlExecutionContext, testTableName, sink);
+                    TestUtils.printSql(engine, sqlExecutionContext, testTableName + "_" + i, sink);
                     System.out.println("table rows\n" + sink);
                     sink.clear();
                     TestUtils.printSql(engine, sqlExecutionContext, viewSql, sink);

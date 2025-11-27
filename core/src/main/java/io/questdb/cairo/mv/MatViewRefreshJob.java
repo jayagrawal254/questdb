@@ -736,7 +736,7 @@ public class MatViewRefreshJob implements Job, QuietCloseable {
                         replacementTimestampHi = intervalIterator.getTimestampHi();
 
                         try (RecordCursor cursor = factory.getCursor(refreshSqlExecutionContext)) {
-                            Os.sleep(ThreadLocalRandom.current().nextInt(100));
+                            Os.sleep(ThreadLocalRandom.current().nextInt(500));
                             final Record record = cursor.getRecord();
                             final TimestampDriver driver = ColumnType.getTimestampDriver(timestampType);
                             long insertedRows = 0;
@@ -1054,7 +1054,7 @@ public class MatViewRefreshJob implements Job, QuietCloseable {
                             rangeFrom,
                             rangeTo
                     );
-                    Os.sleep(ThreadLocalRandom.current().nextInt(100));
+                    Os.sleep(ThreadLocalRandom.current().nextInt(500));
                     insertAsSelect(viewDefinition, viewState, walWriter, refreshContext, refreshTriggerTimestamp);
                 } finally {
                     refreshSqlExecutionContext.clearReader();

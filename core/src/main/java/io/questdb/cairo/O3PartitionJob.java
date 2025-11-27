@@ -912,6 +912,23 @@ public class O3PartitionJob extends AbstractQueueConsumerJob<O3PartitionTask> {
                     } else {
                         // Replacing data with no O3 data, e.g. effectively deleting a part of the partition
 
+                        LOG.info().$("replace commit with no O3 data [table=").$(tableWriter.getTableToken())
+                                .$(", partition=").$ts(timestampDriver, partitionTimestamp)
+                                .$(", srcOooLo=").$(srcOooLo)
+                                .$(", srcOooHi=").$(srcOooHi)
+                                .$(", srcDataMax=").$(srcDataMax)
+                                .$(", prefixType=").$(prefixType)
+                                .$(", prefixLo=").$(prefixLo)
+                                .$(", prefixHi=").$(prefixHi)
+                                .$(", mergeType=").$(mergeType)
+                                .$(", mergeDataLo=").$(mergeDataLo)
+                                .$(", mergeDataHi=").$(mergeDataHi)
+                                .$(", suffixType=").$(suffixType)
+                                .$(", suffixLo=").$(suffixLo)
+                                .$(", suffixHi=").$(suffixHi)
+                                .$(", o3TimestampMin=").$ts(timestampDriver, o3TimestampMin)
+                                .I$();
+
                         // O3 data is supposed to be merged into the middle of an existing partition
                         // but there is no O3 data, it's a replacing commit with no new rows, just the range.
                         // At the end we have existing column data prefix, suffix and nothing to insert in between.
@@ -924,7 +941,19 @@ public class O3PartitionJob extends AbstractQueueConsumerJob<O3PartitionTask> {
                         // No intersection with existing partition data, the whole replace range is after the existing partition
                         noop |= prefixType == O3_BLOCK_DATA && prefixLo == 0 && prefixHi == srcDataMax - 1;
 
+                        LOG.info().$("noop check [table=").$(tableWriter.getTableToken())
+                                .$(", partition=").$ts(timestampDriver, partitionTimestamp)
+                                .$(", noop=").$(noop)
+                                .$(", noopReason1=").$(mergeType == O3_BLOCK_O3 && prefixType == O3_BLOCK_DATA && suffixType == O3_BLOCK_DATA)
+                                .$(", noopReason2=").$(suffixType == O3_BLOCK_DATA && suffixLo == 0 && suffixHi == srcDataMax - 1)
+                                .$(", noopReason3=").$(prefixType == O3_BLOCK_DATA && prefixLo == 0 && prefixHi == srcDataMax - 1)
+                                .I$();
+
                         if (noop) {
+                            LOG.info().$("NOOP - skipping partition modification [table=").$(tableWriter.getTableToken())
+                                    .$(", partition=").$ts(timestampDriver, partitionTimestamp)
+                                    .$(", oldPartitionSize=").$(oldPartitionSize)
+                                    .I$();
                             updatePartition(ff, srcTimestampAddr, srcTimestampSize, srcTimestampFd, tableWriter, partitionUpdateSinkAddr, partitionTimestamp, newMinPartitionTimestamp, oldPartitionSize, oldPartitionSize, 0);
                             return;
                         }

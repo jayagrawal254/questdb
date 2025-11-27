@@ -192,11 +192,27 @@ public class MatViewRefreshJob implements Job, QuietCloseable {
         final long recordRowCopierMetadataVersion = walWriter.getMetadata().getMetadataVersion();
         final long refreshFinishTimestampUs = microsecondClock.getTicks();
         final long commitPeriodHi = refreshContext.periodHi != Numbers.LONG_NULL ? refreshContext.periodHi : viewState.getLastPeriodHi();
+
+        final TableToken viewToken = walWriter.getTableToken();
+        LOG.info().$("commitMatView [view=").$(viewToken)
+                .$(", refreshContext.toBaseTxn=").$(refreshContext.toBaseTxn)
+                .$(", refreshContext.periodHi=").$(refreshContext.periodHi)
+                .$(", viewState.lastRefreshBaseTxn=").$(viewState.getLastRefreshBaseTxn())
+                .$(", commitPeriodHi=").$(commitPeriodHi)
+                .$(", replacementLo=").$(replacementTimestampLo)
+                .$(", replacementHi=").$(replacementTimestampHi)
+                .I$();
+
         if (refreshContext.toBaseTxn == -1) {
             // It's a range refresh.
             // It comes in two flavors:
             //   1. Range refresh run by the user via REFRESH SQL
             //   2. Period range refresh triggered by period timer
+
+            LOG.info().$("commitMatView RANGE refresh - keeping lastRefreshBaseTxn [view=").$(viewToken)
+                    .$(", keepingBaseTxn=").$(viewState.getLastRefreshBaseTxn())
+                    .$(", isPeriodRefresh=").$(refreshContext.periodHi != Numbers.LONG_NULL)
+                    .I$();
 
             // First, do a range replace commit.
             walWriter.commitWithParams(
@@ -230,6 +246,12 @@ public class MatViewRefreshJob implements Job, QuietCloseable {
             // It's an incremental/full refresh.
             // Easy job: first commit data along with the mat view state and then update the in-memory state.
             // The mat view data commit will reset cached txn intervals since we want to evict them.
+
+            LOG.info().$("commitMatView INCREMENTAL/FULL refresh - updating lastRefreshBaseTxn [view=").$(viewToken)
+                    .$(", oldBaseTxn=").$(viewState.getLastRefreshBaseTxn())
+                    .$(", newBaseTxn=").$(refreshContext.toBaseTxn)
+                    .I$();
+
             walWriter.commitMatView(
                     refreshContext.toBaseTxn,
                     refreshFinishTimestampUs,
@@ -294,6 +316,17 @@ public class MatViewRefreshJob implements Job, QuietCloseable {
         final long now = driver.getTicks();
         final boolean rangeRefresh = rangeTo != Numbers.LONG_NULL;
         final boolean incrementalRefresh = lastRefreshTxn != Numbers.LONG_NULL;
+
+        LOG.info().$("findRefreshIntervals entry [view=").$(viewToken)
+                .$(", lastRefreshTxn=").$(lastRefreshTxn)
+                .$(", baseTableLastTxn=").$(lastTxn)
+                .$(", rangeRefresh=").$(rangeRefresh)
+                .$(", incrementalRefresh=").$(incrementalRefresh)
+                .$(", rangeFrom=").$ts(driver, rangeFrom)
+                .$(", rangeTo=").$ts(driver, rangeTo)
+                .$(", viewState.lastRefreshBaseTxn=").$(viewState.getLastRefreshBaseTxn())
+                .$(", viewState.lastPeriodHi=").$ts(driver, viewState.getLastPeriodHi())
+                .I$();
 
         LongList refreshIntervals = null;
         long minTs = Long.MAX_VALUE;
@@ -736,7 +769,21 @@ public class MatViewRefreshJob implements Job, QuietCloseable {
                         replacementTimestampHi = intervalIterator.getTimestampHi();
 
                         try (RecordCursor cursor = factory.getCursor(refreshSqlExecutionContext)) {
-                            Os.sleep(ThreadLocalRandom.current().nextInt(500));
+                            LOG.info().$("cursor acquired [view=").$(viewTableToken)
+                                    .$(", intervalLo=").$(intervalIterator.getTimestampLo())
+                                    .$(", intervalHi=").$(intervalIterator.getTimestampHi())
+                                    .$(", refreshContext.toBaseTxn=").$(refreshContext.toBaseTxn)
+                                    .$(", viewState.lastRefreshBaseTxn=").$(viewState.getLastRefreshBaseTxn())
+                                    .I$();
+                            // Sleep after acquiring cursor to create window for race condition testing.
+                            // The cursor already has the data snapshot; concurrent commits during this
+                            // sleep can advance lastRefreshBaseTxn, causing this refresh to commit stale data.
+                            final int sleepMs = ThreadLocalRandom.current().nextInt(500);
+                            LOG.info().$("sleeping after cursor acquisition [view=").$(viewTableToken)
+                                    .$(", sleepMs=").$(sleepMs)
+                                    .I$();
+                            Os.sleep(sleepMs);
+                            LOG.info().$("woke up from sleep, about to iterate cursor [view=").$(viewTableToken).I$();
                             final Record record = cursor.getRecord();
                             final TimestampDriver driver = ColumnType.getTimestampDriver(timestampType);
                             long insertedRows = 0;
@@ -998,6 +1045,12 @@ public class MatViewRefreshJob implements Job, QuietCloseable {
         final long rangeFrom = refreshTask.rangeFrom;
         final long rangeTo = refreshTask.rangeTo;
 
+        LOG.info().$("rangeRefresh entry [view=").$(viewToken)
+                .$(", rangeFrom=").$(rangeFrom)
+                .$(", rangeTo=").$(rangeTo)
+                .$(", isPeriodRefresh=").$(rangeFrom == Numbers.LONG_NULL)
+                .I$();
+
         final MatViewState viewState = stateStore.getViewState(viewToken);
         if (viewState == null || viewState.isPendingInvalidation() || viewState.isInvalid() || viewState.isDropped()) {
             return false;
@@ -1005,6 +1058,11 @@ public class MatViewRefreshJob implements Job, QuietCloseable {
 
         final MatViewDefinition viewDefinition = viewState.getViewDefinition();
         final TimestampDriver driver = viewDefinition.getBaseTableTimestampDriver();
+
+        LOG.info().$("rangeRefresh state [view=").$(viewToken)
+                .$(", viewState.lastRefreshBaseTxn=").$(viewState.getLastRefreshBaseTxn())
+                .$(", viewState.lastPeriodHi=").$ts(driver, viewState.getLastPeriodHi())
+                .I$();
 
         if (!viewState.tryLock()) {
             // Someone is refreshing the view, so we're going for another attempt.
@@ -1261,6 +1319,13 @@ public class MatViewRefreshJob implements Job, QuietCloseable {
     ) throws SqlException {
         assert viewState.isLocked();
 
+        final TableToken viewToken = viewDefinition.getMatViewToken();
+        LOG.info().$("refreshIncremental0 entry [view=").$(viewToken)
+                .$(", baseTable=").$(baseTableToken)
+                .$(", viewState.lastRefreshBaseTxn=").$(viewState.getLastRefreshBaseTxn())
+                .$(", viewState.lastPeriodHi=").$(viewState.getLastPeriodHi())
+                .I$();
+
         // Steps:
         // - compile view and execute with timestamp ranges from the unprocessed commits
         // - write the result set to WAL (or directly to table writer O3 area)
@@ -1270,8 +1335,13 @@ public class MatViewRefreshJob implements Job, QuietCloseable {
         try (TableReader baseTableReader = engine.getReader(baseTableToken)) {
             final long fromBaseTxn = viewState.getLastRefreshBaseTxn();
             final long toBaseTxn = baseTableReader.getSeqTxn();
+
+            LOG.info().$("refreshIncremental0 txn check [view=").$(viewToken)
+                    .$(", fromBaseTxn=").$(fromBaseTxn)
+                    .$(", toBaseTxn=").$(toBaseTxn)
+                    .$(", isPeriodView=").$(viewDefinition.getPeriodLength() > 0)
+                    .I$();
             if (fromBaseTxn > toBaseTxn) {
-                final TableToken viewToken = viewDefinition.getMatViewToken();
                 throw CairoException.nonCritical().put("unexpected txn numbers, base table may have been renamed [view=").put(viewToken.getTableName())
                         .put(", fromBaseTxn=").put(fromBaseTxn)
                         .put(", toBaseTxn=").put(toBaseTxn)

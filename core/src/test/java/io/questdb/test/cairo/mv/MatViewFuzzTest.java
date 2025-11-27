@@ -721,7 +721,7 @@ public class MatViewFuzzTest extends AbstractFuzzTest {
 
         // Can help to reduce memory consumption.
         engine.releaseInactive();
-        Os.sleep(ThreadLocalRandom.current().nextInt(100));
+        Os.sleep(ThreadLocalRandom.current().nextInt(500));
         fuzzer.applyManyWalParallel(fuzzTransactions, rnd, testTableName, true, true);
 
         stop.set(true);

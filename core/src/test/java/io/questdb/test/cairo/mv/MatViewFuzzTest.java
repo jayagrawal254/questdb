@@ -751,13 +751,26 @@ public class MatViewFuzzTest extends AbstractFuzzTest {
                                 "from materialized_views " +
                                 "where view_name = '" + mvName + "' and view_status <> 'invalid';"
                 );
-                TestUtils.assertSqlCursors(
-                        compiler,
-                        sqlExecutionContext,
-                        viewSql,
-                        mvName,
-                        LOG
-                );
+                try {
+                    TestUtils.assertSqlCursors(
+                            compiler,
+                            sqlExecutionContext,
+                            viewSql,
+                            mvName,
+                            LOG
+                    );
+                } catch (Throwable th) {
+                    StringSink sink = new StringSink();
+                    TestUtils.printSql(engine, sqlExecutionContext, testTableName, sink);
+                    System.out.println("table rows\n" + sink);
+                    sink.clear();
+                    TestUtils.printSql(engine, sqlExecutionContext, viewSql, sink);
+                    System.out.println("query rows\n" + sink);
+                    sink.clear();
+                    TestUtils.printSql(engine, sqlExecutionContext, mvName, sink);
+                    System.out.println("view contents\n" + sink);
+                    throw th;
+                }
             }
         }
     }

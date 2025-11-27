@@ -1145,6 +1145,18 @@ public class MatViewRefreshJob implements Job, QuietCloseable {
             viewState.tryCloseIfDropped();
         }
 
+        // Sleep after successful period refresh to allow base table replace-range commits
+        // to narrow the data before the first incremental refresh runs. This increases
+        // the chance of reproducing the bug where first incremental refresh uses
+        // base table min/max which is narrower than the MV's existing data from period refreshes.
+        if (rangeFrom == Numbers.LONG_NULL) { // period refresh
+            final int sleepMs = ThreadLocalRandom.current().nextInt(500);
+            LOG.info().$("sleeping after period refresh [view=").$(viewToken)
+                    .$(", sleepMs=").$(sleepMs)
+                    .I$();
+            Os.sleep(sleepMs);
+        }
+
         return true;
     }
 
@@ -1325,6 +1337,20 @@ public class MatViewRefreshJob implements Job, QuietCloseable {
                 .$(", viewState.lastRefreshBaseTxn=").$(viewState.getLastRefreshBaseTxn())
                 .$(", viewState.lastPeriodHi=").$(viewState.getLastPeriodHi())
                 .I$();
+
+        // Sleep before first incremental refresh on a period MV that has already had period refreshes.
+        // This gives time for base table replace-range commits to narrow the data, triggering the bug
+        // where first incremental refresh uses base table min/max which is narrower than the MV's data.
+        if (viewState.getLastRefreshBaseTxn() == -1
+                && viewDefinition.getPeriodLength() > 0
+                && viewState.getLastPeriodHi() != Numbers.LONG_NULL) {
+            final int sleepMs = 300 + ThreadLocalRandom.current().nextInt(500);
+            LOG.info().$("sleeping before first incremental on period MV [view=").$(viewToken)
+                    .$(", lastPeriodHi=").$(viewState.getLastPeriodHi())
+                    .$(", sleepMs=").$(sleepMs)
+                    .I$();
+            Os.sleep(sleepMs);
+        }
 
         // Steps:
         // - compile view and execute with timestamp ranges from the unprocessed commits

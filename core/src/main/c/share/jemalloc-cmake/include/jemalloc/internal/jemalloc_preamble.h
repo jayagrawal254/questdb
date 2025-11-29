@@ -14,7 +14,9 @@
 #  endif
 #endif
 
-#define JEMALLOC_NO_DEMANGLE
+#if !defined(JEMALLOC_IS_MALLOC)
+#  define JEMALLOC_NO_DEMANGLE
+#endif
 #ifdef JEMALLOC_JET
 #  undef JEMALLOC_IS_MALLOC
 #  define JEMALLOC_N(n) jet_##n

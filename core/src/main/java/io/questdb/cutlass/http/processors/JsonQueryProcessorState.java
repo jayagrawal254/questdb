@@ -1264,46 +1264,51 @@ public class JsonQueryProcessorState implements Mutable, Closeable {
         // closing cursor here guarantees that by the time an http client finished reading response, the table
         // is released
         cursor = Misc.free(cursor);
-        circuitBreaker = null;
-        queryState = QUERY_SUFFIX;
-        if (count > -1) {
-            logTimings();
-            response.bookmark();
-            if (code > 0) {
-                // closing the failed record to make the JSON response parsable
+        try {
+            circuitBreaker = null;
+            queryState = QUERY_SUFFIX;
+            if (count > -1) {
+                logTimings();
+                response.bookmark();
+                if (code > 0) {
+                    // closing the failed record to make the JSON response parsable
+                    response.putAscii(']');
+                }
+                // always close the dataset
                 response.putAscii(']');
+                response.putAscii(',').putAsciiQuoted("count").putAscii(':').put(count);
+                if (code > 0) {
+                    response.putAscii(',')
+                            .putAsciiQuoted("error").putAscii(':')
+                            .putQuote().escapeJsonStr(message != null ? message : "Internal server error").putQuote()
+                            .putAscii(", \"errorPos\"").putAscii(':').put(messagePosition);
+                }
+                if (timings) {
+                    response.putAscii(',').putAsciiQuoted("timings").putAscii(':')
+                            .putAscii('{')
+                            .putAsciiQuoted("authentication").putAscii(':').put(httpConnectionContext.getAuthenticationNanos()).putAscii(',')
+                            .putAsciiQuoted("compiler").putAscii(':').put(compilerNanos).putAscii(',')
+                            .putAsciiQuoted("execute").putAscii(':').put(nanosecondClock.getTicks() - executeStartNanos).putAscii(',')
+                            .putAsciiQuoted("count").putAscii(':').put(recordCountNanos)
+                            .putAscii('}');
+                }
+                if (explain) {
+                    response.putAscii(',').putAsciiQuoted("explain").putAscii(':')
+                            .putAscii('{')
+                            .putAsciiQuoted("jitCompiled").putAscii(':').putAscii(queryJitCompiled ? "true" : "false")
+                            .putAscii('}');
+                }
+                response.putAscii('}');
+                count = -1;
+                counter.set(-1);
+                response.sendChunk(true);
+                return;
             }
-            // always close the dataset
-            response.putAscii(']');
-            response.putAscii(',').putAsciiQuoted("count").putAscii(':').put(count);
-            if (code > 0) {
-                response.putAscii(',')
-                        .putAsciiQuoted("error").putAscii(':')
-                        .putQuote().escapeJsonStr(message != null ? message : "Internal server error").putQuote()
-                        .putAscii(", \"errorPos\"").putAscii(':').put(messagePosition);
-            }
-            if (timings) {
-                response.putAscii(',').putAsciiQuoted("timings").putAscii(':')
-                        .putAscii('{')
-                        .putAsciiQuoted("authentication").putAscii(':').put(httpConnectionContext.getAuthenticationNanos()).putAscii(',')
-                        .putAsciiQuoted("compiler").putAscii(':').put(compilerNanos).putAscii(',')
-                        .putAsciiQuoted("execute").putAscii(':').put(nanosecondClock.getTicks() - executeStartNanos).putAscii(',')
-                        .putAsciiQuoted("count").putAscii(':').put(recordCountNanos)
-                        .putAscii('}');
-            }
-            if (explain) {
-                response.putAscii(',').putAsciiQuoted("explain").putAscii(':')
-                        .putAscii('{')
-                        .putAsciiQuoted("jitCompiled").putAscii(':').putAscii(queryJitCompiled ? "true" : "false")
-                        .putAscii('}');
-            }
-            response.putAscii('}');
-            count = -1;
-            counter.set(-1);
-            response.sendChunk(true);
-            return;
+            response.done();
+        } finally {
+            cursor = Misc.free(cursor);
         }
-        response.done();
+
     }
 
     void resume(HttpChunkedResponse response)

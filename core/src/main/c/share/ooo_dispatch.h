@@ -160,6 +160,8 @@ DECLARE_DISPATCHER_TYPE(platform_memcmp, const void *a, const void *b, const siz
 
 DECLARE_DISPATCHER_TYPE(platform_memset, void *dst, const int val, const size_t len);
 
+DECLARE_DISPATCHER_TYPE(platform_memzero, void *dst, const size_t len);
+
 DECLARE_DISPATCHER_TYPE(platform_memmove, void *dst, const void *src, const size_t len);
 
 // 8 - 11

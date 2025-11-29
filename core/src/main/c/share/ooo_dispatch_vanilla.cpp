@@ -166,6 +166,10 @@ void platform_memset(void *dst, const int val, const size_t len) {
     __MEMSET(dst, val, len);
 }
 
+void platform_memzero(void *dst, const size_t len) {
+    memset(dst, 0, len);
+}
+
 void platform_memmove(void *dst, const void *src, const size_t len) {
     __MEMMOVE(dst, src, len);
 }

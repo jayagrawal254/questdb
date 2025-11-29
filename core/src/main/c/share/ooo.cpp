@@ -548,6 +548,15 @@ JNIEXPORT void JNICALL Java_io_questdb_std_Vect_memset
     );
 }
 
+DECLARE_DISPATCHER(platform_memzero);
+JNIEXPORT void JNICALL Java_io_questdb_std_Vect_memzero
+        (JNIEnv *e, jclass cl, jlong dst, jlong len) {
+    platform_memzero(
+            reinterpret_cast<void *>(dst),
+            __JLONG_REINTERPRET_CAST__(int64_t, len)
+    );
+}
+
 DECLARE_DISPATCHER(merge_copy_var_column_int32);
 JNIEXPORT void JNICALL
 Java_io_questdb_std_Vect_oooMergeCopyStrColumn(JNIEnv *env, jclass cl,

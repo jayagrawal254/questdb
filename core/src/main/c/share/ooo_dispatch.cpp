@@ -259,6 +259,19 @@ void MULTI_VERSION_NAME (platform_memset)(void *dst, const int val, const size_t
     __MEMSET(dst, val, len);
 }
 
+void MULTI_VERSION_NAME (platform_memzero)(void *dst, const size_t len) {
+    // Use rep stosb - ERMSB on modern x86 CPUs optimizes this for zeroing
+    void *dummy_dst = dst;
+    size_t dummy_len = len;
+    __asm__ volatile (
+        "xor %%eax, %%eax\n"
+        "rep stosb"
+        : "+D"(dummy_dst), "+c"(dummy_len)
+        :
+        : "eax", "memory"
+    );
+}
+
 void MULTI_VERSION_NAME (platform_memmove)(void *dst, const void *src, const size_t len) {
     __MEMMOVE(dst, src, len);
 }

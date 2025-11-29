@@ -209,6 +209,9 @@ public final class Vect {
     // note: memset only uses single byte of the given int
     public static native void memset(long dst, long len, int value);
 
+    // Optimized zero-fill using ERMSB on modern x86 CPUs
+    public static native void memzero(long dst, long len);
+
     public static native long mergeDedupTimestampWithLongIndexAsc(
             long pSrc,
             long srcLo,

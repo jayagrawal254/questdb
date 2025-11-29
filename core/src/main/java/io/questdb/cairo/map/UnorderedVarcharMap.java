@@ -211,7 +211,7 @@ public class UnorderedVarcharMap implements Map, Reopenable {
         free = (int) (keyCapacity * loadFactor);
         size = 0;
         nResizes = 0;
-        Vect.memset(memStart, memLimit - memStart, 0);
+        Vect.memzero(memStart, memLimit - memStart);
         Misc.free(allocator); // free all memory, but allocator remains usable for further allocations
     }
 

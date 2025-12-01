@@ -260,16 +260,139 @@ void MULTI_VERSION_NAME (platform_memset)(void *dst, const int val, const size_t
 }
 
 void MULTI_VERSION_NAME (platform_memzero)(void *dst, const size_t len) {
-    // Use rep stosb - ERMSB on modern x86 CPUs optimizes this for zeroing
-    void *dummy_dst = dst;
-    size_t dummy_len = len;
-    __asm__ volatile (
-        "xor %%eax, %%eax\n"
-        "rep stosb"
-        : "+D"(dummy_dst), "+c"(dummy_len)
-        :
-        : "eax", "memory"
-    );
+    // Small buffer threshold: rep stosb has startup latency, use SIMD for small sizes
+    constexpr size_t ERMSB_THRESHOLD = 2 * 1024; // 2 KiB - below this, SIMD is faster
+    // Large buffer threshold: switch to non-temporal stores to avoid cache pollution
+    constexpr size_t NT_THRESHOLD = 16 * 1024 * 1024; // 16 MiB
+
+    if (len < ERMSB_THRESHOLD) {
+        // Small: use regular SIMD stores (no rep stosb startup latency)
+        auto *p = static_cast<uint8_t *>(dst);
+        const auto *end = p + len;
+
+#if INSTRSET >= 10
+        // AVX-512: 64-byte stores
+        constexpr size_t BLOCK_SIZE = 64;
+        __asm__ volatile ("vpxord %%zmm0, %%zmm0, %%zmm0" ::: "zmm0");
+        while (p + BLOCK_SIZE <= end) {
+            _mm512_storeu_si512(reinterpret_cast<__m512i *>(p), _mm512_setzero_si512());
+            p += BLOCK_SIZE;
+        }
+#elif INSTRSET >= 8
+        // AVX2: 32-byte stores
+        constexpr size_t BLOCK_SIZE = 32;
+        __m256i zero = _mm256_setzero_si256();
+        while (p + BLOCK_SIZE <= end) {
+            _mm256_storeu_si256(reinterpret_cast<__m256i *>(p), zero);
+            p += BLOCK_SIZE;
+        }
+#else
+        // SSE: 16-byte stores
+        constexpr size_t BLOCK_SIZE = 16;
+        __m128i zero = _mm_setzero_si128();
+        while (p + BLOCK_SIZE <= end) {
+            _mm_storeu_si128(reinterpret_cast<__m128i *>(p), zero);
+            p += BLOCK_SIZE;
+        }
+#endif
+        // Handle tail
+        while (p < end) {
+            *p++ = 0;
+        }
+    } else if (len <= NT_THRESHOLD) {
+        // Medium: use rep stosb - ERMSB on modern x86 CPUs optimizes this
+        void *dummy_dst = dst;
+        size_t dummy_len = len;
+        __asm__ volatile (
+            "xor %%eax, %%eax\n"
+            "rep stosb"
+            : "+D"(dummy_dst), "+c"(dummy_len)
+            :
+            : "eax", "memory"
+        );
+    } else {
+        // Large: use non-temporal stores with zero-idiom to bypass cache
+        auto *p = static_cast<uint8_t *>(dst);
+        const auto *end = p + len;
+
+#if INSTRSET >= 10
+        // AVX-512: 64-byte stores
+        constexpr size_t BLOCK_SIZE = 64;
+        constexpr size_t ALIGN = 64;
+
+        // Align to 64-byte boundary
+        while (reinterpret_cast<uintptr_t>(p) % ALIGN != 0 && p < end) {
+            *p++ = 0;
+        }
+
+        // Main loop with zero-idiom zmm register
+        size_t blocks = (end - p) / BLOCK_SIZE;
+        if (blocks > 0) {
+            __asm__ volatile (
+                "vpxord %%zmm0, %%zmm0, %%zmm0\n"  // Zero-idiom: no execution unit needed
+                "1:\n"
+                "vmovntdq %%zmm0, (%[ptr])\n"
+                "add %[inc], %[ptr]\n"
+                "dec %[cnt]\n"
+                "jnz 1b\n"
+                : [ptr] "+r"(p), [cnt] "+r"(blocks)
+                : [inc] "i"(BLOCK_SIZE)
+                : "zmm0", "memory"
+            );
+        }
+#elif INSTRSET >= 8
+        // AVX2: 32-byte stores
+        constexpr size_t BLOCK_SIZE = 32;
+        constexpr size_t ALIGN = 32;
+
+        while (reinterpret_cast<uintptr_t>(p) % ALIGN != 0 && p < end) {
+            *p++ = 0;
+        }
+
+        size_t blocks = (end - p) / BLOCK_SIZE;
+        if (blocks > 0) {
+            __asm__ volatile (
+                "vpxor %%ymm0, %%ymm0, %%ymm0\n"  // Zero-idiom
+                "1:\n"
+                "vmovntdq %%ymm0, (%[ptr])\n"
+                "add %[inc], %[ptr]\n"
+                "dec %[cnt]\n"
+                "jnz 1b\n"
+                : [ptr] "+r"(p), [cnt] "+r"(blocks)
+                : [inc] "i"(BLOCK_SIZE)
+                : "ymm0", "memory"
+            );
+        }
+#else
+        // SSE: 16-byte stores
+        constexpr size_t BLOCK_SIZE = 16;
+        constexpr size_t ALIGN = 16;
+
+        while (reinterpret_cast<uintptr_t>(p) % ALIGN != 0 && p < end) {
+            *p++ = 0;
+        }
+
+        size_t blocks = (end - p) / BLOCK_SIZE;
+        if (blocks > 0) {
+            __asm__ volatile (
+                "pxor %%xmm0, %%xmm0\n"  // Zero-idiom
+                "1:\n"
+                "movntdq %%xmm0, (%[ptr])\n"
+                "add %[inc], %[ptr]\n"
+                "dec %[cnt]\n"
+                "jnz 1b\n"
+                : [ptr] "+r"(p), [cnt] "+r"(blocks)
+                : [inc] "i"(BLOCK_SIZE)
+                : "xmm0", "memory"
+            );
+        }
+#endif
+        // Handle tail
+        while (p < end) {
+            *p++ = 0;
+        }
+        _mm_sfence();
+    }
 }
 
 void MULTI_VERSION_NAME (platform_memmove)(void *dst, const void *src, const size_t len) {

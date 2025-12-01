@@ -167,6 +167,7 @@ void platform_memset(void *dst, const int val, const size_t len) {
 }
 
 void platform_memzero(void *dst, const size_t len) {
+    // On ARM64, just use memset - the compiler and libc will optimize appropriately
     memset(dst, 0, len);
 }
 
